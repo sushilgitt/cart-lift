@@ -106,7 +106,7 @@ export default function Dashboard() {
           {usagePct >= 80 ? (
             <s-paragraph>
               {usagePct >= 100 ? "You've passed your plan's limit." : "You're close to your plan's limit."} Your deals keep running.{" "}
-              <s-link href="/app/plans">See plans</s-link>
+              <s-link href="/app/plans/select">Upgrade plan</s-link>
             </s-paragraph>
           ) : null}
         </s-stack>
