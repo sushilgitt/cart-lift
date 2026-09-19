@@ -5,15 +5,14 @@ WORKDIR /app
 EXPOSE 3000
 
 COPY package.json package-lock.json ./
-COPY extensions/cartlift-discount/package.json extensions/cartlift-discount/package.json
-COPY extensions/cartlift-pixel/package.json extensions/cartlift-pixel/package.json
 
-# Dev dependencies are needed for the build (vite, react-router dev), then pruned.
-RUN npm ci --ignore-scripts && npm cache clean --force
+# Root workspace only: the extensions are built and deployed by the Shopify CLI,
+# not by this server. Dev dependencies are needed for the build, then pruned.
+RUN npm ci --ignore-scripts --workspaces=false --no-audit --no-fund && npm cache clean --force
 
 COPY . .
 
-RUN npx prisma generate && npm run build && npm prune --omit=dev
+RUN npx prisma generate && npm run build && npm prune --omit=dev --workspaces=false --no-audit --no-fund
 
 ENV NODE_ENV=production
 CMD ["npm", "run", "docker-start"]
