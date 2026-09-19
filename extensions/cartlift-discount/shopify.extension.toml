@@ -1,0 +1,22 @@
+api_version = "2026-07"
+
+[[extensions]]
+name = "t:name"
+handle = "cartlift-discount"
+type = "function"
+uid = "fb1097ef-7e7f-8f27-40c7-c2b4bd486683c2f04776"
+description = "t:description"
+
+  [[extensions.targeting]]
+  target = "cart.lines.discounts.generate.run"
+  input_query = "src/cart_lines_discounts_generate_run.graphql"
+  export = "cart-lines-discounts-generate-run"
+
+  [extensions.build]
+  command = ""
+  path = "dist/function.wasm"
+
+  # The config metafield's `collectionIds` key feeds $collectionIds in the input query.
+  [extensions.input.variables]
+  namespace = "$app:cartlift"
+  key = "config"

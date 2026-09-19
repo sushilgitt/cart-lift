@@ -1,0 +1,45 @@
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+
+client_id = "f5895a2b559a89b654e881c3ec425db4"
+name = "CartLift"
+handle = "cartlift"
+application_url = "https://cartlift.91.239.208.85.sslip.io"
+embedded = true
+
+[build]
+automatically_update_urls_on_dev = false
+include_config_on_deploy = true
+
+[access_scopes]
+# write_discounts      — the automatic app discount that runs the CartLift Function
+# read_products        — product/collection pickers for deal targeting, gifts, upsells
+# read_themes          — detect whether the app embed is switched on (onboarding)
+# write_pixels + read_customer_events — the analytics pixel that attributes
+#                        completed checkouts to deals without read_orders
+scopes = "write_discounts,read_products,read_themes,write_pixels,read_customer_events"
+
+[auth]
+redirect_urls = [
+  "https://cartlift.91.239.208.85.sslip.io/auth/callback",
+  "https://cartlift.91.239.208.85.sslip.io/auth/shopify/callback",
+  "https://cartlift.91.239.208.85.sslip.io/api/auth/callback",
+]
+
+[webhooks]
+# Must match ApiVersion in app/shopify.server.ts.
+api_version = "2026-07"
+
+  [[webhooks.subscriptions]]
+  topics = [ "app/uninstalled" ]
+  uri = "/webhooks/app/uninstalled"
+
+  [[webhooks.subscriptions]]
+  topics = [ "app/scopes_update" ]
+  uri = "/webhooks/app/scopes_update"
+
+  [[webhooks.subscriptions]]
+  compliance_topics = [ "customers/data_request", "customers/redact", "shop/redact" ]
+  uri = "/webhooks/compliance"
+
+[pos]
+embedded = false

@@ -1,0 +1,150 @@
+// CartLift — quantity breaks, BOGO, gifts and upsells for Shopify.
+//
+// Deal.config holds everything the editor edits (bars, style, texts) as JSON so
+// new bar/style options never need a migration. Targeting and schedule stay as
+// real columns because the server filters on them when it publishes.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Session {
+  id                  String    @id
+  shop                String
+  state               String
+  isOnline            Boolean   @default(false)
+  scope               String?
+  expires             DateTime?
+  accessToken         String
+  userId              BigInt?
+  firstName           String?
+  lastName            String?
+  email               String?
+  accountOwner        Boolean   @default(false)
+  locale              String?
+  collaborator        Boolean?  @default(false)
+  emailVerified       Boolean?  @default(false)
+  refreshToken        String?
+  refreshTokenExpires DateTime?
+}
+
+enum Plan {
+  FREE
+  STARTER
+  SCALE
+  PRO
+}
+
+model Shop {
+  id             String    @id @default(cuid())
+  domain         String    @unique
+  name           String?
+  email          String?
+  currencyCode   String?
+  moneyFormat    String?
+  plan           Plan      @default(FREE)
+  // GID of the single automatic app discount that runs the CartLift function.
+  discountId     String?
+  pixelId        String?
+  // Global settings: custom CSS, default style overrides.
+  settings       Json      @default("{}")
+  // Hash of the last published configs, so unchanged saves skip the API calls.
+  publishedHash  String?
+  publishedAt    DateTime?
+  installedAt    DateTime  @default(now())
+  uninstalledAt  DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  deals  Deal[]
+  stats  DailyStat[]
+  orders DealOrder[]
+}
+
+enum DealStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+}
+
+enum DealType {
+  QUANTITY_BREAK
+  BXGY
+  BUNDLE
+}
+
+enum TargetType {
+  ALL
+  PRODUCTS
+  COLLECTIONS
+  EXCEPT
+}
+
+model Deal {
+  id            String     @id @default(cuid())
+  shopId        String
+  shop          Shop       @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  name          String
+  type          DealType   @default(QUANTITY_BREAK)
+  status        DealStatus @default(DRAFT)
+  // Lower runs first when several deals match the same product.
+  priority      Int        @default(0)
+  targetType    TargetType @default(ALL)
+  // Resource snapshots [{id, title, image}] so the editor needs no API round trip.
+  products      Json       @default("[]")
+  collections   Json       @default("[]")
+  startsAt      DateTime?
+  endsAt        DateTime?
+  config        Json       @default("{}")
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  stats  DailyStat[]
+  orders DealOrder[]
+
+  @@index([shopId, status])
+}
+
+// One row per shop/deal/arm/day. Incremented from the storefront beacon and pixel.
+model DailyStat {
+  id           String   @id @default(cuid())
+  shopId       String
+  shop         Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  dealId       String
+  deal         Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  arm          String   @default("A")
+  day          DateTime @db.Date
+  views        Int      @default(0)
+  addToCarts   Int      @default(0)
+  orders       Int      @default(0)
+  units        Int      @default(0)
+  revenue      Decimal  @default(0) @db.Decimal(14, 2)
+  addedRevenue Decimal  @default(0) @db.Decimal(14, 2)
+
+  @@unique([dealId, arm, day])
+  @@index([shopId, day])
+}
+
+// A checkout that contained deal lines. Unique per order so pixel retries cannot double-count.
+model DealOrder {
+  id           String   @id @default(cuid())
+  shopId       String
+  shop         Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  dealId       String
+  deal         Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  arm          String   @default("A")
+  orderId      String
+  currency     String?
+  units        Int      @default(0)
+  revenue      Decimal  @default(0) @db.Decimal(14, 2)
+  addedRevenue Decimal  @default(0) @db.Decimal(14, 2)
+  createdAt    DateTime @default(now())
+
+  @@unique([shopId, orderId, dealId])
+  @@index([shopId, createdAt])
+}

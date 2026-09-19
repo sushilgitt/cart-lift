@@ -1,0 +1,10 @@
+.cache
+.git
+.shopify
+.react-router
+build
+node_modules
+extensions/*/node_modules
+extensions/*/dist
+docs
+*.md

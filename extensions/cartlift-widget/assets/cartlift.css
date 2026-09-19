@@ -1,0 +1,308 @@
+/* CartLift deal widget. Also loaded by the admin preview, so keep it self-contained. */
+.cl-block {
+  --cl-accent: #1a1a1a;
+  --cl-bar-bg: #fff;
+  --cl-bar-selected-bg: #f4f6f8;
+  --cl-border: #d9d9d9;
+  --cl-border-selected: #1a1a1a;
+  --cl-title: #1a1a1a;
+  --cl-subtitle: #6b7280;
+  --cl-price: #1a1a1a;
+  --cl-full-price: #9ca3af;
+  --cl-label-bg: #e7f5ec;
+  --cl-label-text: #0f7a3a;
+  --cl-badge-bg: #1a1a1a;
+  --cl-badge-text: #fff;
+  --cl-block-title: #1a1a1a;
+  --cl-radius: 10px;
+  --cl-title-size: 15px;
+  display: block;
+  margin: 16px 0;
+  font-family: inherit;
+  line-height: 1.3;
+  color: var(--cl-title);
+}
+.cl-block *,
+.cl-block *::before,
+.cl-block *::after {
+  box-sizing: border-box;
+}
+.cl-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 10px;
+  color: var(--cl-block-title);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.cl-heading::before,
+.cl-heading::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--cl-border);
+}
+.cl-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.cl-layout-horizontal .cl-bars {
+  flex-direction: row;
+  align-items: stretch;
+}
+.cl-layout-horizontal .cl-bar {
+  flex: 1 1 0;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding-top: 20px;
+}
+.cl-layout-horizontal .cl-bar-prices {
+  text-align: center;
+  align-items: center;
+}
+.cl-layout-grid .cl-bars {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.cl-layout-grid .cl-bar {
+  flex-direction: column;
+  align-items: flex-start;
+  padding-top: 20px;
+}
+.cl-layout-grid .cl-bar-prices {
+  text-align: left;
+  align-items: flex-start;
+}
+
+.cl-bar {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 12px;
+  padding: 14px 16px;
+  border: 2px solid var(--cl-border);
+  border-radius: var(--cl-radius);
+  background: var(--cl-bar-bg);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.cl-bar:hover {
+  border-color: var(--cl-border-selected);
+}
+.cl-bar.is-selected {
+  border-color: var(--cl-border-selected);
+  background: var(--cl-bar-selected-bg);
+}
+.cl-bar:focus-visible {
+  outline: 2px solid var(--cl-accent);
+  outline-offset: 2px;
+}
+.cl-radio {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--cl-border);
+  border-radius: 50%;
+  background: #fff;
+  position: relative;
+}
+.cl-bar.is-selected .cl-radio {
+  border-color: var(--cl-accent);
+}
+.cl-bar.is-selected .cl-radio::after {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  background: var(--cl-accent);
+}
+.cl-layout-horizontal .cl-radio,
+.cl-layout-grid .cl-radio {
+  display: none;
+}
+.cl-bar-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.cl-bar-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.cl-layout-horizontal .cl-bar-head {
+  justify-content: center;
+}
+.cl-bar-title {
+  font-size: var(--cl-title-size);
+  font-weight: 700;
+  color: var(--cl-title);
+}
+.cl-bar-label {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: calc(var(--cl-radius) / 2);
+  background: var(--cl-label-bg);
+  color: var(--cl-label-text);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.cl-bar-sub {
+  margin-top: 2px;
+  font-size: 13px;
+  color: var(--cl-subtitle);
+}
+.cl-bar-prices {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  text-align: right;
+  white-space: nowrap;
+}
+.cl-price {
+  font-size: calc(var(--cl-title-size) + 1px);
+  font-weight: 700;
+  color: var(--cl-price);
+}
+.cl-full {
+  font-size: 13px;
+  color: var(--cl-full-price);
+  text-decoration: line-through;
+}
+.cl-unit {
+  font-size: 12px;
+  color: var(--cl-subtitle);
+}
+.cl-badge {
+  position: absolute;
+  top: -11px;
+  right: 14px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--cl-badge-bg);
+  color: var(--cl-badge-text);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.cl-layout-horizontal .cl-badge,
+.cl-layout-grid .cl-badge {
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+}
+.cl-badge--fancy {
+  border-radius: 4px 4px 4px 0;
+  top: -12px;
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.15);
+}
+
+.cl-extras {
+  flex-basis: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cl-extras:empty {
+  display: none;
+}
+.cl-variants {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cl-variant-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--cl-subtitle);
+}
+.cl-variant-row select {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--cl-border);
+  border-radius: calc(var(--cl-radius) / 2);
+  background: #fff;
+  color: var(--cl-title);
+  font: inherit;
+  font-size: 13px;
+}
+.cl-gift,
+.cl-upsell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: calc(var(--cl-radius) / 1.5);
+  background: var(--cl-label-bg);
+  color: var(--cl-label-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+.cl-upsell {
+  background: transparent;
+  border: 1px dashed var(--cl-border);
+  color: var(--cl-title);
+  font-weight: 500;
+  cursor: pointer;
+}
+.cl-upsell input {
+  margin: 0;
+  accent-color: var(--cl-accent);
+}
+.cl-thumb {
+  width: 36px;
+  height: 36px;
+  flex: none;
+  object-fit: cover;
+  border-radius: calc(var(--cl-radius) / 2);
+  background: #fff;
+}
+.cl-extra-text {
+  flex: 1;
+  min-width: 0;
+}
+.cl-extra-price s {
+  opacity: 0.6;
+  margin-left: 4px;
+  font-weight: 400;
+}
+
+.cartlift-hidden {
+  display: none !important;
+}
+
+@media (max-width: 480px) {
+  .cl-layout-horizontal .cl-bars {
+    flex-direction: column;
+  }
+  .cl-layout-horizontal .cl-bar {
+    flex-direction: row;
+    text-align: left;
+  }
+  .cl-layout-horizontal .cl-bar-head {
+    justify-content: flex-start;
+  }
+  .cl-layout-horizontal .cl-bar-prices {
+    align-items: flex-end;
+    text-align: right;
+  }
+  .cl-layout-horizontal .cl-badge {
+    left: auto;
+    right: 14px;
+    transform: none;
+  }
+}

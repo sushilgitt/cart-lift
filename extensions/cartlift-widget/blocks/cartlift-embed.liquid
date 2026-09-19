@@ -1,0 +1,16 @@
+{%- comment -%}
+  App embed: turns CartLift on for the whole theme and auto-places the deal
+  widget above the add-to-cart button on product pages. If the merchant adds
+  the "CartLift deals" app block, the widget renders there instead.
+{%- endcomment -%}
+{%- if request.page_type == 'product' and product -%}
+  {%- render 'cartlift-data', product: product, placement: 'auto' -%}
+{%- endif -%}
+
+{% schema %}
+{
+  "name": "CartLift deals",
+  "target": "body",
+  "settings": []
+}
+{% endschema %}

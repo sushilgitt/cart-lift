@@ -1,0 +1,62 @@
+{
+  "payload": {
+    "export": "cart-lines-discounts-generate-run",
+    "target": "cart.lines.discounts.generate.run",
+    "input": {
+      "presentmentCurrencyRate": "1.0",
+      "cart": {
+        "lines": [
+          {
+            "id": "gid://shopify/CartLine/1",
+            "quantity": 2,
+            "cost": { "amountPerQuantity": { "amount": "10.0" } },
+            "deal": { "value": "d1" },
+            "arm": null,
+            "gift": null,
+            "upsell": null,
+            "merchandise": {
+              "__typename": "ProductVariant",
+              "id": "gid://shopify/ProductVariant/1",
+              "product": { "id": "gid://shopify/Product/1", "inCollections": [] }
+            }
+          }
+        ]
+      },
+      "discount": {
+        "discountClasses": ["PRODUCT"],
+        "metafield": {
+          "jsonValue": {
+            "collectionIds": [],
+            "deals": [
+              {
+                "id": "d1",
+                "tt": "ALL",
+                "name": "Bundle & save",
+                "bars": [
+                  { "id": "b1", "q": 1, "k": "q", "dt": "none", "dv": 0 },
+                  { "id": "b2", "q": 2, "k": "q", "dt": "percentage", "dv": 10, "m": "Buy 2, save 10%" }
+                ]
+              }
+            ]
+          }
+        }
+      }
+    },
+    "output": {
+      "operations": [
+        {
+          "productDiscountsAdd": {
+            "candidates": [
+              {
+                "message": "Buy 2, save 10%",
+                "targets": [{ "cartLine": { "id": "gid://shopify/CartLine/1" } }],
+                "value": { "percentage": { "value": 10 } }
+              }
+            ],
+            "selectionStrategy": "ALL"
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,28 @@
+name = "CartLift analytics"
+type = "web_pixel_extension"
+uid = "d0b74eac-5418-410d-17e9-e3d9e65b83dee1754dbe"
+
+runtime_context = "strict"
+
+# Reports only that a checkout contained CartLift deal lines and their amounts.
+[customer_privacy]
+analytics = true
+marketing = false
+preferences = false
+sale_of_data = "disabled"
+
+[settings]
+type = "object"
+
+# Both set per shop by ensureWebPixel() (app/lib/pixel.server.ts).
+[settings.fields.shop]
+name = "Shop domain"
+description = "The myshopify.com domain this pixel reports for."
+type = "single_line_text_field"
+validations = [{ name = "min", value = "1" }]
+
+[settings.fields.api]
+name = "Events endpoint"
+description = "CartLift events URL."
+type = "single_line_text_field"
+validations = [{ name = "min", value = "1" }]

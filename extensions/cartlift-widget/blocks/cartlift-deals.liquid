@@ -1,0 +1,18 @@
+{%- comment -%}
+  App block: place the deal widget exactly where the merchant wants it on the
+  product page. Uses the dynamic product source so it always matches the page.
+{%- endcomment -%}
+{%- assign cl_product = block.settings.product | default: product -%}
+<div class="cartlift-slot" data-product-id="{{ cl_product.id }}" {{ block.shopify_attributes }}></div>
+{%- render 'cartlift-data', product: cl_product, placement: 'block' -%}
+
+{% schema %}
+{
+  "name": "CartLift deals",
+  "target": "section",
+  "enabled_on": { "templates": ["product"] },
+  "settings": [
+    { "type": "product", "id": "product", "label": "Product", "autofill": true }
+  ]
+}
+{% endschema %}

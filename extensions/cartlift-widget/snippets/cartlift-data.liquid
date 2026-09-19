@@ -1,0 +1,19 @@
+{%- comment -%}
+  Everything the widget needs, inlined so rendering needs no network call.
+  `app.metafields.cartlift.deals` is published by the app (app/lib/sync.server.ts).
+{%- endcomment -%}
+{%- assign cl_config = app.metafields.cartlift.deals.value -%}
+{%- if cl_config and product -%}
+<script type="application/json" data-cartlift-data="{{ product.id }}">
+  {
+    "config": {{ cl_config | json }},
+    "product": {{ product | json }},
+    "collections": [{%- for c in product.collections -%}{{ c.id }}{%- unless forloop.last -%},{%- endunless -%}{%- endfor -%}],
+    "moneyFormat": {{ shop.money_format | json }},
+    "shop": {{ shop.permanent_domain | json }},
+    "placement": {{ placement | json }}
+  }
+</script>
+{{ 'cartlift.css' | asset_url | stylesheet_tag }}
+<script src="{{ 'cartlift.js' | asset_url }}" defer></script>
+{%- endif -%}
