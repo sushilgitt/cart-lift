@@ -2,13 +2,11 @@
 
 client_id = "f5895a2b559a89b654e881c3ec425db4"
 name = "CartLift"
-handle = "cartlift"
 application_url = "https://cartlift.91.239.208.85.sslip.io"
 embedded = true
 
 [build]
 automatically_update_urls_on_dev = false
-include_config_on_deploy = true
 
 [access_scopes]
 # write_discounts      — the automatic app discount that runs the CartLift Function
