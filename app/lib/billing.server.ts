@@ -33,13 +33,7 @@ export async function appHandle(admin: AdminGraphql): Promise<string> {
   } catch (error) {
     console.error("Could not read app handle", error);
   }
-  return cachedHandle || process.env.SHOPIFY_APP_HANDLE || "cartlift";
-}
-
-/** Shopify's hosted plan page. Admin UI: must be opened at the top level. */
-export function pricingPageUrl(domain: string, handle: string) {
-  const store = domain.replace(/\.myshopify\.com$/, "");
-  return `https://admin.shopify.com/store/${store}/charges/${handle}/pricing_plans`;
+  return cachedHandle || process.env.SHOPIFY_APP_HANDLE || "cartlift-19";
 }
 
 const RANK: Record<Plan, number> = { FREE: 0, STARTER: 1, SCALE: 2, PRO: 3 };

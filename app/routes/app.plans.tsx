@@ -4,7 +4,8 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { PLANS, planById } from "../lib/plans";
-import { monthlyUsage, syncPlanFromShopify } from "../lib/billing.server";
+import { appHandle, monthlyUsage, syncPlanFromShopify } from "../lib/billing.server";
+import { PlanButton } from "../components/PlanButton";
 import { formatMoney } from "../lib/deals";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
@@ -14,6 +15,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const shop = await prisma.shop.findUniqueOrThrow({ where: { domain: session.shop } });
   return {
     current: shop.plan,
+    handle: await appHandle(admin),
     usage: await monthlyUsage(shop.id),
     moneyFormat: (shop.moneyFormat || "${{amount}}").replace(/<[^>]*>/g, ""),
   };
@@ -27,9 +29,9 @@ export default function Plans() {
 
   return (
     <s-page heading="Plans">
-      <s-button slot="primary-action" variant="primary" href="/app/plans/select">
+      <PlanButton slot="primary-action" variant="primary" handle={d.handle}>
         {d.current === "FREE" ? "Upgrade plan" : "Change plan"}
-      </s-button>
+      </PlanButton>
 
       <s-section heading={`You're on ${current.name}`}>
         <s-stack gap="small-200">
@@ -60,7 +62,7 @@ export default function Plans() {
               {plan.id === d.current ? (
                 <s-badge tone="success">Current plan</s-badge>
               ) : (
-                <s-button href="/app/plans/select">Choose {plan.name}</s-button>
+                <PlanButton handle={d.handle}>Choose {plan.name}</PlanButton>
               )}
             </s-stack>
           </s-section>
