@@ -8,9 +8,15 @@ import { syncShop } from "./sync.server";
  * The Function has no reliable clock per deal, so scheduled deals are enforced
  * by publishing only live deals. The storefront widget also checks the dates
  * itself, so a deal disappears from product pages on time even between ticks.
+ *
+ * Shortly after boot every installed shop with active deals is synced once:
+ * that catches deals that started or ended while the server was down, and
+ * publishes documents added in a new release. syncShop's hash check makes it
+ * a database-only no-op for shops that are already up to date.
  */
 
 const TICK_MS = 5 * 60 * 1000;
+const STARTUP_DELAY_MS = 30 * 1000;
 let lastTick = new Date();
 
 async function tick() {
@@ -43,6 +49,22 @@ async function tick() {
   }
 }
 
+async function reconcileAll() {
+  const shops = await prisma.shop.findMany({
+    where: { uninstalledAt: null, deals: { some: { status: "ACTIVE" } } },
+    select: { domain: true },
+  });
+  for (const { domain } of shops) {
+    try {
+      const { admin } = await unauthenticated.admin(domain);
+      const result = await syncShop(admin, domain);
+      if (!result.skipped) console.log(`Startup sync republished ${domain}`);
+    } catch (error) {
+      console.error(`Startup sync failed for ${domain}`, error);
+    }
+  }
+}
+
 declare global {
   // eslint-disable-next-line no-var
   var __cartliftScheduler: NodeJS.Timeout | undefined;
@@ -50,6 +72,9 @@ declare global {
 
 export function startScheduler() {
   if (process.env.NODE_ENV !== "production" || global.__cartliftScheduler) return;
+  setTimeout(() => {
+    reconcileAll().catch((error) => console.error("Startup sync failed", error));
+  }, STARTUP_DELAY_MS);
   global.__cartliftScheduler = setInterval(() => {
     tick().catch((error) => console.error("Scheduler tick failed", error));
   }, TICK_MS);

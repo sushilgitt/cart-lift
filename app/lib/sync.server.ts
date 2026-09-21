@@ -4,6 +4,7 @@ import prisma from "../db.server";
 import { gql, type AdminGraphql } from "./shop.server";
 import {
   normalizeConfig,
+  numericId,
   renderText,
   storefrontDeal,
   type Bar,
@@ -14,14 +15,17 @@ import {
 /**
  * Publishes a shop's live deals to Shopify.
  *
- * Two documents come out of the same deal rows:
+ * Three documents come out of the same deal rows:
  *  - the Function config, on the automatic discount's `$app:cartlift/config`
  *    metafield — what checkout prices from;
  *  - the storefront config, on the AppInstallation's `cartlift/deals`
  *    app-data metafield — what the theme widget renders from via
- *    `app.metafields.cartlift.deals`.
+ *    `app.metafields.cartlift.deals`;
+ *  - the gift config, on the AppInstallation's `cartlift/gifts` app-data
+ *    metafield — the small slice of the Function config the cart watcher
+ *    (cartlift-cart.js) needs on every page to keep free gifts in the cart.
  *
- * Both are rebuilt from scratch every time, so there is no partial-update state
+ * All three are rebuilt from scratch every time, so there is no partial-update state
  * to get out of sync. The hash skips the API calls when nothing changed.
  */
 
@@ -92,6 +96,31 @@ export function buildStorefrontConfig(shop: Shop, deals: Deal[], appUrl: string)
     css: settings.customCss ?? "",
     deals: deals.map((deal) => storefrontDeal({ ...deal, type: deal.type as DealTypeKey })),
   };
+}
+
+/**
+ * What the cart watcher needs to decide which free gifts a cart has earned.
+ * It mirrors the Function's counting, so it keeps every live deal in priority
+ * order — a deal without gifts can still claim a line before a later one.
+ * IDs are numeric to match the Ajax Cart API.
+ */
+export function buildGiftConfig(deals: Deal[]) {
+  const out = deals.map((deal) => {
+    const config = normalizeConfig(deal.config, deal.type as DealTypeKey);
+    return {
+      id: deal.id,
+      tt: deal.targetType,
+      p: refs(deal.products).map((p) => Number(numericId(p.id))),
+      c: refs(deal.collections).map((c) => Number(numericId(c.id))),
+      across: config.across,
+      bars: config.bars.map((bar) => ({
+        q: bar.qty,
+        ...(bar.gift ? { gift: Number(numericId(bar.gift.id)) } : {}),
+      })),
+    };
+  });
+  // `g` lets Liquid skip the watcher entirely when no deal has a gift.
+  return { v: 1, g: out.some((d) => d.bars.some((b) => b.gift)), deals: out };
 }
 
 const CREATE_DISCOUNT = `#graphql
@@ -186,9 +215,11 @@ export async function syncShop(
   const appUrl = process.env.SHOPIFY_APP_URL || "";
   const functionConfig = JSON.stringify(buildFunctionConfig(live));
   const storefrontConfig = JSON.stringify(buildStorefrontConfig(shop, live, appUrl));
+  const giftConfig = JSON.stringify(buildGiftConfig(live));
   const hash = createHash("sha256")
     .update(functionConfig)
     .update(storefrontConfig)
+    .update(giftConfig)
     .update(shop.discountId ?? "")
     .digest("hex");
 
@@ -208,6 +239,13 @@ export async function syncShop(
       type: "json",
       value: storefrontConfig,
     },
+    {
+      ownerId: installation.currentAppInstallation.id,
+      namespace: NAMESPACE,
+      key: "gifts",
+      type: "json",
+      value: giftConfig,
+    },
   ];
   if (!discount.created) {
     metafields.push({
@@ -224,6 +262,7 @@ export async function syncShop(
   const finalHash = createHash("sha256")
     .update(functionConfig)
     .update(storefrontConfig)
+    .update(giftConfig)
     .update(discount.id)
     .digest("hex");
   await prisma.shop.update({

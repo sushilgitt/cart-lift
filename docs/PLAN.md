@@ -23,13 +23,19 @@ functional spec it is modelled on.
    * **Storefront config** → app-data metafield `cartlift/deals` on the
      AppInstallation, read by Liquid as `app.metafields.cartlift.deals`.
      No network call is needed to render the widget.
+   * **Gift config** → app-data metafield `cartlift/gifts`: the targeting and
+     bar quantities the cart watcher needs, inlined on every page.
 2. Shopper picks a bar → the widget sets the form quantity and adds line
    properties `_cartlift` (deal id) and `_cartlift_arm` (A/B arm) → theme adds
    to cart as usual (cart drawer behaviour stays the theme's).
 3. The Discount Function counts units per (deal, product) — or per deal for
    "count across products" deals — from *any* line of an eligible product, picks
    the highest reached bar, and emits product discounts.
-4. Widget beacons views/add-to-carts to `/api/events`; the pixel reports
+4. The cart watcher (`cartlift-cart.js`, every page via the app embed) sees
+   each Ajax cart change, works out the reached bars with the Function's
+   rules, and adds, removes or trims gift lines to match — so gifts follow the
+   cart however it got there (repeat adds, cart quantity edits, quick-add).
+5. Widget beacons views/add-to-carts to `/api/events`; the pixel reports
    `checkout_completed` with deal lines → `DailyStat` + `DealOrder`.
 
 Fixed amounts are stored in shop currency and converted with

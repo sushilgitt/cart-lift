@@ -1,0 +1,25 @@
+{%- comment -%}
+  Cart watcher (assets/cartlift-cart.js): adds and removes free gifts as the
+  cart reaches or leaves a gift bar. Rendered on every page by the app embed,
+  and on product pages by the app block. Only loads when a live deal has a gift.
+
+  `cols` maps product → collection ids for the cart's products and the current
+  product, so collection-targeted deals can be matched without a request.
+{%- endcomment -%}
+{%- assign cl_gifts = app.metafields.cartlift.gifts.value -%}
+{%- if cl_gifts and cl_gifts.g -%}
+  {%- capture cl_cols -%}
+    {%- for item in cart.items -%}"{{ item.product_id }}":[{{ item.product.collections | map: 'id' | join: ',' }}],{%- endfor -%}
+    {%- if product -%}"{{ product.id }}":[{{ product.collections | map: 'id' | join: ',' }}],{%- endif -%}
+  {%- endcapture -%}
+<script type="application/json" data-cartlift-cart>
+  {
+    "config": {{ cl_gifts | json }},
+    "cols": { {{ cl_cols }} "_": [] },
+    "count": {{ cart.item_count | default: 0 }},
+    "root": {{ routes.root_url | json }},
+    "template": {{ template.name | json }}
+  }
+</script>
+<script src="{{ 'cartlift-cart.js' | asset_url }}" defer></script>
+{%- endif -%}
