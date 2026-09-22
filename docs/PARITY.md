@@ -26,9 +26,9 @@ Legend: ✅ done · 🟡 partial · ❌ missing
 | Quantity breaks, same product | ✅ | |
 | Buy X get Y — Y free / % / amount / fixed price, Y shows $0 | ✅ | |
 | Mix tiers of different types in one deal | ✅ | Bar type per bar |
-| Quantity breaks for different products (choose-product modal with its own style) | 🟡 | Only "count across products"; no storefront product chooser |
-| Complete the bundle — "Bundle Upsell" bar: hand-picked products/variants, each with own discount | ❌ | |
-| Progressive gifts template *(template name unverified)* | 🟡 | A gift per bar works; no template or gift progress display |
+| Quantity breaks for different products (choose-product modal with its own style) | ✅ | Pool: visibility / products / collections / all-except; chooser with search |
+| Complete the bundle — "Bundle Upsell" bar: hand-picked products/variants, each with own discount | ✅ | Complete sets only |
+| Progressive gifts template *(template name unverified)* | ✅ | Several gifts per bar, cumulative option, gift track |
 | Subscription template / per-deal subscription toggle | ❌ | Selling plans not supported |
 | Collection breaks — tiers apply however the product is added (widget, product form, collection page) | ✅ | Function counts untagged lines; gifts follow the cart (c9bb318) |
 | Collection breaks — merge duplicate variant lines into one | ✅ | Cart watcher merges a plain line into the deal line |
@@ -182,7 +182,7 @@ Closes 1.2 and 1.3.
 - Custom element placement; `variant-selected` and `variants-changed` events.
 - Admin preview on a real product with product switching.
 
-### Phase 2 — Templates (≈3–4 weeks) → ~72%
+### Phase 2 — Templates (≈3–4 weeks) → ~72%  ✅ built 2026-09-22
 Closes 1.1 (except subscriptions).
 - **Mix & match:** storefront choose-product modal (eligible = selected /
   collections / all-except), styled from the editor; photo size, names, price
