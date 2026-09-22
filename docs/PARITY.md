@@ -33,32 +33,32 @@ Legend: ✅ done · 🟡 partial · ❌ missing
 | Collection breaks — tiers apply however the product is added (widget, product form, collection page) | ✅ | Function counts untagged lines; gifts follow the cart (c9bb318) |
 | Collection breaks — merge duplicate variant lines into one | ✅ | Cart watcher merges a plain line into the deal line |
 | Same quantity allowed on two bars only with the same discount | ✅ | Picked bar is tagged; its gift/message apply |
-| Additional % on top of BXGY ("Buy 3 get 4 + 10%") | ❌ | |
+| Additional % on top of BXGY ("Buy 3 get 4 + 10%") | ✅ | |
 
 ### 1.2 Bar settings
 | Kaching | CartLift |
 |---|---|
 | Title, subtitle, label, badge (simple/fancy), selected by default | ✅ |
 | Discount % / amount per item / custom total | ✅ |
-| Bar image | ❌ |
-| Highlights (callouts / trust text per bar) | ❌ |
+| Bar image | ✅ uploaded to Shopify Files |
+| Highlights (callouts / trust text per bar) | ✅ up to 4 |
 | Free gift per bar | ✅ |
 | Upsell per bar — selected product, adjusted price, text, image, pre-checked, only when bar selected | ✅ |
-| Upsell source: Shopify complementary products | ❌ |
+| Upsell source: Shopify complementary products | ✅ Search & Discovery; Function-checked |
 | Upsell "enable for subscription customers" | ❌ |
 | Subscription pricing option per bar | ❌ |
 | Discount name shown in cart/checkout (override) | ✅ |
-| Dynamic variables incl. 4 custom product-metafield variables | 🟡 | 9 built-ins, no metafield variables |
+| Dynamic variables incl. 4 custom product-metafield variables | ✅ 11 built-ins + 4 metafield variables |
 
 ### 1.3 Variants
 | Kaching | CartLift |
 |---|---|
 | Different variant per unit | ✅ |
-| "Show product variants selection" on single-quantity bars (toggle) | ❌ |
-| Default variants per bar / per product | ❌ |
-| Swatches: colour, uploaded image, variant image; shape circle/rounded/square; size slider | ❌ (dropdowns only) |
+| "Show product variants selection" on single-quantity bars (toggle) | ✅ |
+| Default variants per bar / per product | ✅ per bar, filtered to the viewed product |
+| Swatches: colour, uploaded image, variant image; shape circle/rounded/square; size slider | ✅ option-based pickers |
 | Hide theme quantity selector | ✅ |
-| Out-of-stock variants disabled | 🟡 per-unit picker only |
+| Out-of-stock variants disabled | ✅ pickers, swatches and a "Sold out" bar state |
 | Follow theme variant picker | ✅ |
 
 ### 1.4 Widget design
@@ -73,7 +73,7 @@ Legend: ✅ done · 🟡 partial · ❌ missing
 | Compare-at price × quantity | ✅ |
 | Custom CSS | ✅ (shop-wide) |
 | Custom HTML *(listing tag)* | ❌ |
-| Live preview | 🟡 fixed test price; Kaching previews a real product with product switching |
+| Live preview | ✅ real product with switching |
 | Sticky ATC / countdown / scratch-off *(third-party only, unverified)* | ❌ optional |
 
 ### 1.5 Text, languages, markets
@@ -106,8 +106,8 @@ Legend: ✅ done · 🟡 partial · ❌ missing
 |---|---|
 | App embed auto-inject | ✅ |
 | App block with dynamic product source (also in Featured product) | ✅ |
-| Custom element `<…-bundle product-id>` inside product form | ❌ |
-| JS events: bar selected / variant selected / variants changed (with quantities + price) | 🟡 bar-selected only |
+| Custom element `<…-bundle product-id>` inside product form | ✅ `<cartlift-bundle>` |
+| JS events: bar selected / variant selected / variants changed (with quantities + price) | ✅ |
 | `?…=off` debug switch | ✅ |
 | Page builders: PageFly, GemPages, EComposer, Foxify, Instant, Replo | ❌ untested |
 | Cart drawers: UpCart | ❌ untested |
@@ -170,7 +170,7 @@ How each item is built: [`IMPLEMENTATION.md`](IMPLEMENTATION.md).
 - Verify POS pricing and document it; verify on 2–3 popular themes.
 - Unit tests for the widget's pricing (`priceBar` parity with the Function).
 
-### Phase 1 — Bars & variants (≈3 weeks) → ~62%
+### Phase 1 — Bars & variants (≈3 weeks) → ~62%  ✅ built 2026-09-22
 Closes 1.2 and 1.3.
 - Bar image; bar highlights.
 - Variant picker on single-quantity bars (toggle); default variants per bar/product.
