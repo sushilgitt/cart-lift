@@ -25,9 +25,11 @@ markets — tripling each of those is how bugs ship.
 - New workspace package `packages/core` (pure TypeScript, no DOM, no Node APIs):
   `priceBar`, `reachedBar`, eligibility, gift planning, text variables, money format.
 - Function imports it directly (Javy bundles it).
-- Widget moves to TypeScript source in `extensions/cartlift-widget/src/`, bundled
-  by esbuild into `assets/cartlift.js` / `assets/cartlift-cart.js`.
-  `npm run deploy` becomes `npm run build:widget && shopify app deploy`.
+- Widget moves to TypeScript source in `packages/widget/src/` (theme app
+  extensions may only contain assets/blocks/locales/snippets), bundled by
+  esbuild (`scripts/build-widget.mjs`) into the extension's `assets/cartlift.js`
+  and `assets/cartlift-cart.js`. `npm run deploy` and `npm run build` build it
+  first; a test fails if the committed assets are stale. ✅ Done in Phase 0.
 - Admin preview keeps loading the built asset (`?url`), so preview = storefront.
 - Existing parity tests become tests of `packages/core` plus a thin check that
   the Function and widget call it.

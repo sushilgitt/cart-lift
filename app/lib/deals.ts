@@ -6,6 +6,8 @@
  * rows keep working as options are added.
  */
 
+import { priceBar as corePriceBar, type BarPrice } from "../../packages/core/src";
+
 export type DiscountType = "none" | "percentage" | "amount" | "fixed_total";
 export type BarKind = "qty" | "bxgy";
 export type Layout = "vertical" | "horizontal" | "grid";
@@ -316,84 +318,23 @@ export function validateConfig(config: DealConfig): string[] {
 }
 
 // ---------------------------------------------------------------------------
-// Pricing (mirrors extensions/cartlift-widget/assets/cartlift.js)
+// Pricing — shared with the widget and the Function (packages/core)
 // ---------------------------------------------------------------------------
 
-export interface BarPrice {
-  /** What the shopper pays for the bar, in cents. */
-  total: number;
-  /** Price without the deal, in cents. */
-  full: number;
-  saved: number;
-  savedPct: number;
-  unit: number;
-}
+export { formatMoney, renderText, type BarPrice } from "../../packages/core/src";
 
-/** Prices a bar for a unit price in cents. `rate` converts shop-currency amounts. */
+/** Prices an editor bar for a unit price in cents. `rate` converts shop-currency amounts. */
 export function priceBar(
   bar: Pick<Bar, "kind" | "qty" | "get" | "discountType" | "discountValue">,
   unitCents: number,
   compareCents = 0,
   rate = 1,
 ): BarPrice {
-  const qty = Math.max(1, bar.qty);
-  const base = unitCents * qty;
-  let total = base;
-  const v = Math.max(0, bar.discountValue);
-
-  if (bar.kind === "bxgy") {
-    const get = Math.min(bar.get, qty - 1);
-    const each =
-      bar.discountType === "percentage" || bar.discountType === "none"
-        ? unitCents * (bar.discountType === "none" ? 1 : Math.min(v, 100) / 100)
-        : bar.discountType === "amount"
-          ? Math.min(v * 100 * rate, unitCents)
-          : Math.max(0, unitCents - v * 100 * rate);
-    total = base - each * Math.max(0, get);
-  } else if (bar.discountType === "percentage") {
-    total = base * (1 - Math.min(v, 100) / 100);
-  } else if (bar.discountType === "amount") {
-    total = Math.max(0, base - v * 100 * rate * qty);
-  } else if (bar.discountType === "fixed_total") {
-    total = Math.min(base, v * 100 * rate);
-  }
-
-  total = Math.round(total);
-  const full = Math.max(base, compareCents > unitCents ? compareCents * qty : base);
-  const saved = Math.max(0, full - total);
-  return {
-    total,
-    full,
-    saved,
-    savedPct: full > 0 ? Math.round((saved / full) * 100) : 0,
-    unit: Math.round(total / qty),
-  };
-}
-
-export function formatMoney(cents: number, format = "${{amount}}"): string {
-  const amount = (cents / 100).toFixed(2);
-  const [whole, dec] = amount.split(".");
-  const withCommas = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-  return format.replace(/\{\{\s*(\w+)\s*\}\}/, (_m, key: string) => {
-    switch (key) {
-      case "amount_no_decimals":
-        return withCommas;
-      case "amount_with_comma_separator":
-        return `${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ".")},${dec}`;
-      case "amount_no_decimals_with_comma_separator":
-        return whole.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
-      default:
-        return `${withCommas}.${dec}`;
-    }
-  });
-}
-
-export function renderText(
-  text: string,
-  vars: Record<string, string | number>,
-): string {
-  return text.replace(/\{\{\s*(\w+)\s*\}\}/g, (m, key: string) =>
-    key in vars ? String(vars[key]) : m,
+  return corePriceBar(
+    { kind: bar.kind, qty: bar.qty, get: bar.get, dt: bar.discountType, dv: bar.discountValue },
+    unitCents,
+    compareCents,
+    rate,
   );
 }
 

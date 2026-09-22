@@ -5,6 +5,7 @@ import {
   CartLinesDiscountsGenerateRunResult,
   ProductDiscountCandidate,
 } from "../generated/api";
+import { matchesTarget, reachedBar } from "../../../packages/core/src";
 
 /**
  * CartLift pricing engine.
@@ -96,41 +97,14 @@ function productOf(line: Line) {
 function isEligible(deal: FnDeal, line: Line): boolean {
   const variant = productOf(line);
   if (!variant) return false;
-  const productId = variant.product.id;
-  switch (deal.tt) {
-    case "ALL":
-      return true;
-    case "PRODUCTS":
-      return (deal.p ?? []).includes(productId);
-    case "EXCEPT":
-      return !(deal.p ?? []).includes(productId);
-    case "COLLECTIONS": {
-      const wanted = deal.c ?? [];
-      return variant.product.inCollections.some(
-        (m) => m.isMember && wanted.includes(m.collectionId),
-      );
-    }
-    default:
-      return false;
-  }
+  const member = new Map(variant.product.inCollections.map((m) => [m.collectionId, m.isMember]));
+  // The input query asks about every targeted collection, so membership is always known.
+  return matchesTarget(deal, variant.product.id, (c) => member.get(c) ?? false) === true;
 }
 
 export function barsFor(deal: FnDeal, arm: string): FnBar[] {
   const bars = (arm !== "A" && deal.arms?.[arm]) || deal.bars;
   return [...bars].sort((a, b) => a.q - b.q);
-}
-
-/**
- * Highest bar whose quantity the group reaches. Among bars sharing that
- * quantity, the one the shopper picked (`preferred`) wins, else the first in
- * editor order. `bars` must be sorted by quantity (stable, see barsFor).
- */
-export function reachedBar(bars: FnBar[], units: number, preferred?: string): FnBar | null {
-  let top = 0;
-  for (const bar of bars) if (bar.q > 0 && units >= bar.q) top = bar.q;
-  if (!top) return null;
-  const tied = bars.filter((bar) => bar.q === top);
-  return tied.find((bar) => bar.id === preferred) ?? tied[0];
 }
 
 const price = (line: Line) => Number(line.cost.amountPerQuantity.amount);

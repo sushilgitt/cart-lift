@@ -2,11 +2,12 @@
   "name": "cartlift",
   "private": true,
   "scripts": {
-    "build": "react-router build",
+    "build": "npm run build:widget && react-router build",
+    "build:widget": "node scripts/build-widget.mjs",
     "dev": "shopify app dev",
     "config:link": "shopify app config link",
     "generate": "shopify app generate",
-    "deploy": "shopify app deploy",
+    "deploy": "npm run build:widget && shopify app deploy",
     "config:use": "shopify app config use",
     "env": "shopify app env",
     "start": "react-router-serve ./build/server/index.js",
@@ -17,7 +18,8 @@
     "prisma": "prisma",
     "graphql-codegen": "graphql-codegen",
     "vite": "vite",
-    "typecheck": "react-router typegen && tsc --noEmit"
+    "typecheck": "react-router typegen && tsc --noEmit",
+    "test": "vitest run && npm --prefix extensions/cartlift-discount test -- --run"
   },
   "type": "module",
   "engines": {
@@ -55,6 +57,7 @@
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^7.0.1",
     "graphql-config": "^5.1.1",
+    "happy-dom": "^20.14.5",
     "prettier": "^3.6.2",
     "typescript": "^5.9.3",
     "vite": "^7.3.1"
