@@ -26,6 +26,8 @@ type DiscountType = "none" | "percentage" | "amount" | "fixed_total";
 
 export interface FnUpsell {
   id: string;
+  /** Variant GID the discount is bound to. Missing (old config) = no discount. */
+  v?: string;
   dt: DiscountType;
   dv: number;
 }
@@ -193,17 +195,18 @@ function buyXGetY(group: Group, bar: FnBar, rate: number, message: string): Cand
   return out;
 }
 
+/** Discount for the one discounted upsell unit. */
 function upsellValue(up: FnUpsell, line: Line, rate: number): Candidate["value"] | null {
   const dv = Number(up.dv) || 0;
   if (dv <= 0) return null;
   if (up.dt === "percentage") return { percentage: { value: Math.min(dv, 100) } };
-  if (up.dt === "amount")
-    return { fixedAmount: { amount: round2(dv * rate), appliesToEachItem: true } };
+  if (up.dt === "amount") {
+    const off = Math.min(dv * rate, price(line));
+    return off > 0 ? { fixedAmount: { amount: round2(off) } } : null;
+  }
   if (up.dt === "fixed_total") {
-    const each = price(line) - dv * rate;
-    return each > 0
-      ? { fixedAmount: { amount: round2(each), appliesToEachItem: true } }
-      : null;
+    const off = price(line) - dv * rate;
+    return off > 0 ? { fixedAmount: { amount: round2(off) } } : null;
   }
   return null;
 }
@@ -281,17 +284,26 @@ export function cartLinesDiscountsGenerateRun(
   }
 
   // Upsells: `_cartlift_upsell=<dealId>:<upsellId>`. Discounted while the deal is in the cart.
+  // Line properties are shopper-controlled, so the tag alone proves nothing: the line
+  // must be the upsell's own variant, and only one unit per deal and upsell is
+  // discounted (the widget adds one) — same rule as gifts.
+  const upsellsUsed = new Set<string>();
   for (const line of input.cart.lines) {
     const tag = line.upsell?.value;
-    if (!tag) continue;
+    const variant = productOf(line);
+    if (!tag || !variant) continue;
     const [dealId, upsellId] = tag.split(":");
     const deal = byId.get(dealId);
     if (!deal || !dealBars.has(dealId)) continue;
     const allBars = [deal.bars, ...Object.values(deal.arms ?? {})].flat();
     const up = allBars.flatMap((b) => b.ups ?? []).find((u) => u.id === upsellId);
-    if (!up) continue;
+    if (!up || !up.v || up.v !== variant.id) continue;
+    const key = `${dealId}|${upsellId}`;
+    if (upsellsUsed.has(key)) continue;
     const value = upsellValue(up, line, rate);
-    if (value) candidates.push({ message: deal.name, targets: [{ cartLine: { id: line.id } }], value });
+    if (!value) continue;
+    upsellsUsed.add(key);
+    candidates.push({ message: deal.name, targets: [{ cartLine: { id: line.id, quantity: 1 } }], value });
   }
 
   if (!candidates.length) return empty;

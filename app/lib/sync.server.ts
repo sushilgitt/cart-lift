@@ -71,7 +71,7 @@ export function buildFunctionConfig(deals: Deal[]) {
         ? {
             ups: bar.upsells
               .filter((u) => u.variant)
-              .map((u) => ({ id: u.id, dt: u.discountType, dv: u.discountValue })),
+              .map((u) => ({ id: u.id, v: u.variant!.id, dt: u.discountType, dv: u.discountValue })),
           }
         : {}),
     }));

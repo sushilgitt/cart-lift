@@ -177,7 +177,7 @@ describe("gifts and upsells", () => {
         p: ["gid://shopify/Product/1"],
         name: "Deal",
         bars: [
-          { id: "b1", q: 1, k: "q", dt: "none", dv: 0, ups: [{ id: "u1", dt: "percentage", dv: 50 }] },
+          { id: "b1", q: 1, k: "q", dt: "none", dv: 0, ups: [{ id: "u1", v: "gid://shopify/ProductVariant/88", dt: "percentage", dv: 50 }] },
           { id: "b2", q: 2, k: "q", dt: "percentage", dv: 10, gift: "gid://shopify/ProductVariant/99" },
         ],
       },
@@ -198,5 +198,42 @@ describe("gifts and upsells", () => {
     const c = candidates(cartLinesDiscountsGenerateRun(input(config, [{ qty: 1, price: 10 }, upsell])));
     expect(c).toHaveLength(1);
     expect(c[0].value).toEqual({ percentage: { value: 50 } });
+  });
+
+  test("upsell tag on another product gets no discount", () => {
+    const foreign = { ...upsell, product: "gid://shopify/Product/500", variant: "gid://shopify/ProductVariant/500", price: 300 };
+    expect(candidates(cartLinesDiscountsGenerateRun(input(config, [{ qty: 1, price: 10 }, foreign])))).toHaveLength(0);
+  });
+
+  test("only one upsell unit is discounted, across lines too", () => {
+    const c = candidates(
+      cartLinesDiscountsGenerateRun(input(config, [{ qty: 1, price: 10 }, { ...upsell, qty: 3 }, { ...upsell, qty: 1 }])),
+    );
+    expect(c).toHaveLength(1);
+    expect(c[0].targets).toEqual([{ cartLine: { id: "gid://shopify/CartLine/2", quantity: 1 } }]);
+  });
+
+  test("config without the upsell variant fails closed", () => {
+    const old = structuredClone(config);
+    delete old.deals![0].bars[0].ups![0].v;
+    expect(candidates(cartLinesDiscountsGenerateRun(input(old, [{ qty: 1, price: 10 }, upsell])))).toHaveLength(0);
+  });
+
+  test("amount and fixed-price upsells discount one unit, never below zero", () => {
+    const withUp = (dt: "amount" | "fixed_total", dv: number) => {
+      const c = structuredClone(config);
+      c.deals![0].bars[0].ups = [{ id: "u1", v: "gid://shopify/ProductVariant/88", dt, dv }];
+      return c;
+    };
+    // $3 off an $8 upsell.
+    let c = candidates(cartLinesDiscountsGenerateRun(input(withUp("amount", 3), [{ qty: 1, price: 10 }, { ...upsell, qty: 2 }])));
+    expect(c[0].value).toEqual({ fixedAmount: { amount: 3 } });
+    expect(c[0].targets[0].cartLine.quantity).toBe(1);
+    // $20 off an $8 upsell is capped at $8.
+    c = candidates(cartLinesDiscountsGenerateRun(input(withUp("amount", 20), [{ qty: 1, price: 10 }, upsell])));
+    expect(c[0].value).toEqual({ fixedAmount: { amount: 8 } });
+    // Fixed price $5 for an $8 upsell → $3 off.
+    c = candidates(cartLinesDiscountsGenerateRun(input(withUp("fixed_total", 5), [{ qty: 1, price: 10 }, upsell])));
+    expect(c[0].value).toEqual({ fixedAmount: { amount: 3 } });
   });
 });
