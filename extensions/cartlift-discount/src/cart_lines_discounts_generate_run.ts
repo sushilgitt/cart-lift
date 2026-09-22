@@ -19,6 +19,8 @@ import {
  *  - A line tagged `_cartlift=<dealId>` prefers that deal; untagged lines go to
  *    the first eligible deal (config order is priority order).
  *  - Units are grouped per (deal, product), or per deal when `across` is set.
+ *  - Bars may share a quantity (their discounts are then equal); `_cartlift_bar`
+ *    on the group's lines says which one the shopper picked, else the first.
  *  - Gift and upsell lines never count toward tiers.
  */
 
@@ -72,6 +74,8 @@ interface Group {
   lines: Line[];
   units: number;
   arm: string;
+  /** Bar id the widget tagged the lines with, if any. */
+  bar?: string;
 }
 
 interface Candidate {
@@ -116,11 +120,17 @@ export function barsFor(deal: FnDeal, arm: string): FnBar[] {
   return [...bars].sort((a, b) => a.q - b.q);
 }
 
-/** Highest bar whose quantity the group reaches. */
-export function reachedBar(bars: FnBar[], units: number): FnBar | null {
-  let hit: FnBar | null = null;
-  for (const bar of bars) if (bar.q > 0 && units >= bar.q) hit = bar;
-  return hit;
+/**
+ * Highest bar whose quantity the group reaches. Among bars sharing that
+ * quantity, the one the shopper picked (`preferred`) wins, else the first in
+ * editor order. `bars` must be sorted by quantity (stable, see barsFor).
+ */
+export function reachedBar(bars: FnBar[], units: number, preferred?: string): FnBar | null {
+  let top = 0;
+  for (const bar of bars) if (bar.q > 0 && units >= bar.q) top = bar.q;
+  if (!top) return null;
+  const tied = bars.filter((bar) => bar.q === top);
+  return tied.find((bar) => bar.id === preferred) ?? tied[0];
 }
 
 const price = (line: Line) => Number(line.cost.amountPerQuantity.amount);
@@ -244,6 +254,7 @@ export function cartLinesDiscountsGenerateRun(
     group.lines.push(line);
     group.units += line.quantity;
     if (line.arm?.value && group.arm === "A") group.arm = line.arm.value;
+    if (line.bar?.value && !group.bar) group.bar = line.bar.value;
   }
 
   const candidates: Candidate[] = [];
@@ -252,7 +263,7 @@ export function cartLinesDiscountsGenerateRun(
 
   for (const group of groups.values()) {
     const bars = barsFor(group.deal, group.arm);
-    const bar = reachedBar(bars, group.units);
+    const bar = reachedBar(bars, group.units, group.bar);
     if (!bar) continue;
     const reached = dealBars.get(group.deal.id) ?? [];
     reached.push(bar);

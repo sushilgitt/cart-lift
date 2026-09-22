@@ -12,6 +12,7 @@
             "cost": { "amountPerQuantity": { "amount": "10.0" } },
             "deal": { "value": "d1" },
             "arm": null,
+            "bar": null,
             "gift": null,
             "upsell": null,
             "merchandise": {

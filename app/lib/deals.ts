@@ -285,15 +285,25 @@ export function normalizeConfig(raw: unknown, type: DealTypeKey = "QUANTITY_BREA
   };
 }
 
+const sameDiscount = (a: Bar, b: Bar) =>
+  a.kind === b.kind &&
+  a.discountType === b.discountType &&
+  a.discountValue === b.discountValue &&
+  (a.kind !== "bxgy" || a.get === b.get);
+
 /** Validation errors that should block saving. */
 export function validateConfig(config: DealConfig): string[] {
   const errors: string[] = [];
   if (!config.bars.length) errors.push("Add at least one bar.");
-  const seen = new Set<number>();
+  // Bars may share a quantity (e.g. "2-pack" and "2-pack + gift"), but checkout
+  // prices by quantity, so they must give the same discount.
+  const byQty = new Map<number, Bar>();
   config.bars.forEach((bar, i) => {
     const n = `Bar ${i + 1}`;
-    if (seen.has(bar.qty)) errors.push(`${n}: quantity ${bar.qty} is used by another bar.`);
-    seen.add(bar.qty);
+    const same = byQty.get(bar.qty);
+    if (same && !sameDiscount(same, bar))
+      errors.push(`${n}: discounts must be the same for the same quantity (${bar.qty}).`);
+    if (!same) byQty.set(bar.qty, bar);
     if (bar.kind === "bxgy" && (bar.get < 1 || bar.get >= bar.qty))
       errors.push(`${n}: "get" must be at least 1 and less than the total quantity.`);
     if (bar.discountType === "percentage" && bar.discountValue > 100)

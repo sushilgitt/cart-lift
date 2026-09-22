@@ -10,6 +10,7 @@ type LineSpec = {
   price: number;
   deal?: string;
   arm?: string;
+  bar?: string;
   gift?: string;
   upsell?: string;
   collections?: string[];
@@ -26,6 +27,7 @@ function input(config: FnConfig, lines: LineSpec[], rate = 1) {
         cost: { amountPerQuantity: { amount: String(l.price) } },
         deal: l.deal ? { value: l.deal } : null,
         arm: l.arm ? { value: l.arm } : null,
+        bar: l.bar ? { value: l.bar } : null,
         gift: l.gift ? { value: l.gift } : null,
         upsell: l.upsell ? { value: l.upsell } : null,
         merchandise: {
@@ -137,6 +139,49 @@ describe("quantity breaks", () => {
     });
     const c = candidates(cartLinesDiscountsGenerateRun(input(config, [{ qty: 2, price: 10, arm: "B" }])));
     expect(c[0].value).toEqual({ percentage: { value: 25 } });
+  });
+});
+
+describe("bars sharing a quantity", () => {
+  const twin: FnConfig = {
+    deals: [
+      {
+        id: "d1",
+        tt: "ALL",
+        name: "Twin",
+        bars: [
+          { id: "b1", q: 1, k: "q", dt: "none", dv: 0 },
+          { id: "plain", q: 2, k: "q", dt: "percentage", dv: 10, m: "2-pack" },
+          { id: "gifted", q: 2, k: "q", dt: "percentage", dv: 10, m: "2-pack + gift", gift: "gid://shopify/ProductVariant/99" },
+        ],
+      },
+    ],
+  };
+  const gift = { qty: 1, price: 5, product: "gid://shopify/Product/9", variant: "gid://shopify/ProductVariant/99", gift: "d1" };
+  const isFree = (c: { targets: { cartLine: { id: string } }[] }[], id: string) =>
+    c.some((x) => x.targets[0].cartLine.id === id);
+
+  test("the tagged bar decides the gift and the message", () => {
+    const c = candidates(cartLinesDiscountsGenerateRun(input(twin, [{ qty: 2, price: 10, bar: "gifted" }, gift])));
+    expect(c[0].message).toBe("2-pack + gift");
+    expect(isFree(c, "gid://shopify/CartLine/2")).toBe(true);
+  });
+
+  test("the other bar's gift is not free", () => {
+    const c = candidates(cartLinesDiscountsGenerateRun(input(twin, [{ qty: 2, price: 10, bar: "plain" }, gift])));
+    expect(c[0].message).toBe("2-pack");
+    expect(isFree(c, "gid://shopify/CartLine/2")).toBe(false);
+  });
+
+  test("untagged lines use the first bar in editor order", () => {
+    const c = candidates(cartLinesDiscountsGenerateRun(input(twin, [{ qty: 2, price: 10 }, gift])));
+    expect(c[0].message).toBe("2-pack");
+    expect(c[0].value).toEqual({ percentage: { value: 10 } });
+  });
+
+  test("a tag for a bar not reached falls back to the reached one", () => {
+    const c = candidates(cartLinesDiscountsGenerateRun(input(twin, [{ qty: 3, price: 10, bar: "b1" }])));
+    expect(c[0].message).toBe("2-pack");
   });
 });
 

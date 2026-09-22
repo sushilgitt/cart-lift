@@ -398,6 +398,15 @@
       (wrap || q).classList.add("cartlift-hidden");
     });
 
+    // `_cartlift_bar` tells checkout which of two bars with the same quantity was
+    // picked. Only sent when needed: otherwise the same product added from two
+    // bars would become two cart lines.
+    var tiedQuantities = arm.bars.some(function (b, i) {
+      return arm.bars.some(function (o, j) {
+        return j !== i && o.qty === b.qty;
+      });
+    });
+
     function selectedBar() {
       return state.bars.find(function (b) {
         return b.id === state.barId;
@@ -408,6 +417,7 @@
       var bar = selectedBar();
       if (!bar) return [];
       var props = { _cartlift: deal.id, _cartlift_arm: arm.key };
+      if (tiedQuantities) props._cartlift_bar = bar.id;
       var items = [];
       var counts = {};
       for (var i = 0; i < bar.qty; i++) {
@@ -435,6 +445,7 @@
       });
       hiddenInput(form, "properties[_cartlift]").value = deal.id;
       hiddenInput(form, "properties[_cartlift_arm]").value = arm.key;
+      if (tiedQuantities) hiddenInput(form, "properties[_cartlift_bar]").value = bar.id;
       // Buy-it-now only supports a single line.
       var multi = lines().length > 1;
       var dyn = form.querySelector(".shopify-payment-button");

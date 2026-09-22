@@ -37,7 +37,7 @@ interface DealSpec {
   p?: number[];
   c?: number[];
   across?: boolean;
-  bars: { q: number; pct?: number; gift?: number }[];
+  bars: { id?: string; q: number; pct?: number; gift?: number }[];
 }
 
 const gid = (type: string, id: number) => `gid://shopify/${type}/${id}`;
@@ -55,7 +55,7 @@ function fnConfig(deals: DealSpec[]): FnConfig {
       across: Boolean(d.across),
       name: d.id,
       bars: d.bars.map((b, i) => ({
-        id: `${d.id}-b${i}`,
+        id: b.id ?? `${d.id}-b${i}`,
         q: b.q,
         k: "q" as const,
         dt: b.pct ? ("percentage" as const) : ("none" as const),
@@ -73,7 +73,7 @@ function giftConfig(deals: DealSpec[]) {
     p: d.p ?? [],
     c: d.c ?? [],
     across: Boolean(d.across),
-    bars: d.bars.map((b) => ({ q: b.q, ...(b.gift ? { gift: b.gift } : {}) })),
+    bars: d.bars.map((b, i) => ({ id: b.id ?? `${d.id}-b${i}`, q: b.q, ...(b.gift ? { gift: b.gift } : {}) })),
   }));
   return { v: 1, g: out.some((d) => d.bars.some((b) => b.gift)), deals: out };
 }
@@ -85,6 +85,7 @@ interface Line {
   qty: number;
   price?: number;
   deal?: string;
+  bar?: string;
   gift?: string;
   upsell?: string;
 }
@@ -99,6 +100,7 @@ const ajaxCart = (lines: Line[]) => ({
     quantity: l.qty,
     properties: {
       ...(l.deal ? { _cartlift: l.deal } : {}),
+      ...(l.bar ? { _cartlift_bar: l.bar } : {}),
       ...(l.gift ? { _cartlift_gift: l.gift } : {}),
       ...(l.upsell ? { _cartlift_upsell: l.upsell } : {}),
     },
@@ -118,6 +120,7 @@ function freeGifts(deals: DealSpec[], lines: Line[], cols: Record<number, number
         cost: { amountPerQuantity: { amount: String(l.price ?? 20) } },
         deal: l.deal ? { value: l.deal } : null,
         arm: null,
+        bar: l.bar ? { value: l.bar } : null,
         gift: l.gift ? { value: l.gift } : null,
         upsell: l.upsell ? { value: l.upsell } : null,
         merchandise: {
@@ -295,6 +298,32 @@ describe("cart watcher agrees with the Discount Function", () => {
       ],
     );
     expect(p.updates).toEqual({ old: 0 });
+  });
+
+  test("bars sharing a quantity: the tagged bar's gift, else the first bar's", () => {
+    const deal: DealSpec = {
+      id: "d1",
+      tt: "ALL",
+      bars: [
+        { id: "b1", q: 1 },
+        { id: "gift-a", q: 2, pct: 10, gift: 444 },
+        { id: "gift-b", q: 2, pct: 10, gift: GIFT },
+      ],
+    };
+    const tagged = reconcile([deal], [{ key: "a", product: 1, variant: 11, qty: 2, deal: "d1", bar: "gift-b" }]);
+    expect(tagged.gifts.map((g) => g.variant)).toEqual([GIFT]);
+    const untagged = reconcile([deal], [{ key: "a", product: 1, variant: 11, qty: 2 }]);
+    expect(untagged.gifts.map((g) => g.variant)).toEqual([444]);
+    // Switching bars swaps the gift.
+    const swap = reconcile(
+      [deal],
+      [
+        { key: "a", product: 1, variant: 11, qty: 2, deal: "d1", bar: "gift-b" },
+        { key: "g", product: 900, variant: 444, qty: 1, gift: "d1" },
+      ],
+    );
+    expect(swap.plan.updates).toEqual({ g: 0 });
+    expect(swap.gifts.map((g) => g.variant)).toEqual([GIFT]);
   });
 
   test("respects gifts the shopper dismissed", () => {

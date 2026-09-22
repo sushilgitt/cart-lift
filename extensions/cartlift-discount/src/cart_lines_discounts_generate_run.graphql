@@ -15,6 +15,9 @@ query CartInput($collectionIds: [ID!]) {
       arm: attribute(key: "_cartlift_arm") {
         value
       }
+      bar: attribute(key: "_cartlift_bar") {
+        value
+      }
       gift: attribute(key: "_cartlift_gift") {
         value
       }

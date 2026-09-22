@@ -114,6 +114,7 @@ export function buildGiftConfig(deals: Deal[]) {
       c: refs(deal.collections).map((c) => Number(numericId(c.id))),
       across: config.across,
       bars: config.bars.map((bar) => ({
+        id: bar.id,
         q: bar.qty,
         ...(bar.gift ? { gift: Number(numericId(bar.gift.id)) } : {}),
       })),

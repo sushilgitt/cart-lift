@@ -47,18 +47,24 @@
     return false;
   }
 
-  /** Highest bar whose quantity the units reach. */
-  function reachedBar(bars, units) {
-    var hit = null;
-    bars
-      .slice()
-      .sort(function (a, b) {
-        return a.q - b.q;
-      })
-      .forEach(function (bar) {
-        if (bar.q > 0 && units >= bar.q) hit = bar;
-      });
-    return hit;
+  /**
+   * Highest bar whose quantity the units reach. Among bars sharing that
+   * quantity, the one the shopper picked (`preferred`) wins, else the first.
+   */
+  function reachedBar(bars, units, preferred) {
+    var top = 0;
+    bars.forEach(function (bar) {
+      if (bar.q > 0 && units >= bar.q && bar.q > top) top = bar.q;
+    });
+    if (!top) return null;
+    var tied = bars.filter(function (bar) {
+      return bar.q === top;
+    });
+    return (
+      tied.find(function (bar) {
+        return preferred != null && bar.id === preferred;
+      }) || tied[0]
+    );
   }
 
   var giftKey = function (dealId, variantId) {
@@ -109,15 +115,16 @@
       if (!deal) continue;
 
       var key = deal.across ? deal.id : deal.id + "|" + item.product_id;
-      var group = groups[key] || (groups[key] = { deal: deal, units: 0 });
+      var group = groups[key] || (groups[key] = { deal: deal, units: 0, bar: null });
       group.units += Number(item.quantity) || 0;
+      if (props._cartlift_bar && !group.bar) group.bar = props._cartlift_bar;
     }
 
     // 2. Gifts the reached bars unlock: one unit per (deal, gift variant).
     var want = {};
     Object.keys(groups).forEach(function (k) {
       var g = groups[k];
-      var bar = reachedBar(g.deal.bars || [], g.units);
+      var bar = reachedBar(g.deal.bars || [], g.units, g.bar);
       if (bar && bar.gift) want[giftKey(g.deal.id, bar.gift)] = { deal: g.deal.id, variant: Number(bar.gift) };
     });
 
