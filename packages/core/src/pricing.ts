@@ -2,7 +2,8 @@ export type DiscountType = "none" | "percentage" | "amount" | "fixed_total";
 
 /** The fields of a bar that decide its price, in storefront naming. */
 export interface PricedBar {
-  kind: "qty" | "bxgy";
+  /** "bundle" bars are priced per item (priceBundle); here they price like "qty". */
+  kind: "qty" | "bxgy" | "bundle";
   qty: number;
   /** BXGY: discounted units per set. */
   get?: number;

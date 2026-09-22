@@ -5,7 +5,7 @@ import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { duplicateDeal, getDeal, listDeals } from "../lib/deal.server";
 import { syncShop, isLive } from "../lib/sync.server";
-import { TEMPLATE_INFO, type DealTypeKey } from "../lib/deals";
+import { TEMPLATES, TEMPLATE_INFO, type DealTypeKey, type TemplateKey } from "../lib/deals";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
@@ -90,7 +90,7 @@ export default function Deals() {
 
   return (
     <s-page heading="Deals">
-      <s-button slot="primary-action" variant="primary" onClick={() => navigate("/app/deals/new?type=QUANTITY_BREAK")}>
+      <s-button slot="primary-action" variant="primary" onClick={() => navigate("/app/deals/new?template=quantity_breaks")}>
         Create deal
       </s-button>
 
@@ -100,12 +100,20 @@ export default function Deals() {
 
       <s-section heading="Start from a template">
         <s-grid gridTemplateColumns="repeat(auto-fit, minmax(220px, 1fr))" gap="base">
-          {(Object.keys(TEMPLATE_INFO) as DealTypeKey[]).map((type) => (
-            <s-box key={type} padding="base" border="base" borderRadius="base">
+          {(Object.keys(TEMPLATES) as TemplateKey[]).map((key) => (
+            <s-box key={key} padding="base" border="base" borderRadius="base">
               <s-stack gap="small-200">
-                <s-heading>{TEMPLATE_INFO[type].title}</s-heading>
-                <s-paragraph color="subdued">{TEMPLATE_INFO[type].description}</s-paragraph>
-                <s-button onClick={() => navigate(`/app/deals/new?type=${type}`)}>Use template</s-button>
+                <s-stack direction="inline" gap="small-200" alignItems="center">
+                  <s-heading>{TEMPLATES[key].title}</s-heading>
+                  {TEMPLATES[key].available ? null : <s-badge>Coming soon</s-badge>}
+                </s-stack>
+                <s-paragraph color="subdued">{TEMPLATES[key].description}</s-paragraph>
+                <s-button
+                  disabled={!TEMPLATES[key].available || undefined}
+                  onClick={() => navigate(`/app/deals/new?template=${key}`)}
+                >
+                  Use template
+                </s-button>
               </s-stack>
             </s-box>
           ))}

@@ -5,7 +5,7 @@ import {
   CartLinesDiscountsGenerateRunResult,
   ProductDiscountCandidate,
 } from "../generated/api";
-import { matchesTarget, reachedBar } from "../../../packages/core/src";
+import { bundleSets, dealMatches, reachedBar } from "../../../packages/core/src";
 
 /**
  * CartLift pricing engine.
@@ -22,7 +22,11 @@ import { matchesTarget, reachedBar } from "../../../packages/core/src";
  *  - Units are grouped per (deal, product), or per deal when `across` is set.
  *  - Bars may share a quantity (their discounts are then equal); `_cartlift_bar`
  *    on the group's lines says which one the shopper picked, else the first.
- *  - Gift and upsell lines never count toward tiers.
+ *  - Gift, upsell and bundle lines never count toward tiers.
+ *  - Mix & match deals also count the products of their pool (`mm`).
+ *  - Complete-the-bundle bars (`k: "b"`) discount the lines tagged
+ *    `_cartlift_bundle=<dealId>:<barId>`, each item per its own rule, for
+ *    complete sets only.
  */
 
 type DiscountType = "none" | "percentage" | "amount" | "fixed_total";
@@ -41,12 +45,20 @@ export interface FnUpsell {
   dv: number;
 }
 
+/** A bundle bar item: a fixed variant, or `v: null` for the viewed (deal) product. */
+export interface FnBundleItem {
+  v: string | null;
+  q: number;
+  dt: DiscountType;
+  dv: number;
+}
+
 export interface FnBar {
   id: string;
   /** Units the bar needs. For BXGY this is buy + get. */
   q: number;
-  /** "q" quantity break, "x" buy X get Y. */
-  k: "q" | "x";
+  /** "q" quantity break, "x" buy X get Y, "b" complete the bundle. */
+  k: "q" | "x" | "b";
   /** BXGY: discounted units per set. */
   g?: number;
   dt: DiscountType;
@@ -55,10 +67,16 @@ export interface FnBar {
   m?: string;
   /** BXGY: extra percentage off on top of the free items. */
   xp?: number;
-  /** Free gift variant GID. */
+  /** Free gift variant GIDs (progressive gifts already resolved). */
+  gifts?: string[];
+  /** Before multiple gifts: one gift variant GID. */
   gift?: string;
+  /** Bundle bars: the items. */
+  it?: FnBundleItem[];
   ups?: FnUpsell[];
 }
+
+type Targeting = { tt: "ALL" | "PRODUCTS" | "COLLECTIONS" | "EXCEPT"; p?: string[]; c?: string[] };
 
 export interface FnDeal {
   id: string;
@@ -66,6 +84,8 @@ export interface FnDeal {
   p?: string[];
   c?: string[];
   across?: boolean;
+  /** Mix & match pool. */
+  mm?: Targeting;
   name: string;
   bars: FnBar[];
   arms?: Record<string, FnBar[]>;
@@ -107,12 +127,31 @@ function isEligible(deal: FnDeal, line: Line): boolean {
   if (!variant) return false;
   const member = new Map(variant.product.inCollections.map((m) => [m.collectionId, m.isMember]));
   // The input query asks about every targeted collection, so membership is always known.
-  return matchesTarget(deal, variant.product.id, (c) => member.get(c) ?? false) === true;
+  return dealMatches(deal, variant.product.id, (c) => member.get(c) ?? false) === true;
 }
 
+/** Quantity and BXGY bars of an arm, by quantity (bundle bars aren't tiers). */
 export function barsFor(deal: FnDeal, arm: string): FnBar[] {
   const bars = (arm !== "A" && deal.arms?.[arm]) || deal.bars;
-  return [...bars].sort((a, b) => a.q - b.q);
+  return bars.filter((b) => b.k !== "b").sort((a, b) => a.q - b.q);
+}
+
+const giftsOf = (bar: FnBar) => bar.gifts ?? (bar.gift ? [bar.gift] : []);
+
+/** Discount on `qty` units of a bundle item. */
+function bundleItemValue(item: FnBundleItem, line: Line, qty: number, rate: number): Candidate["value"] | null {
+  const dv = Number(item.dv) || 0;
+  const unit = price(line);
+  if (item.dt === "percentage") return dv > 0 ? { percentage: { value: Math.min(dv, 100) } } : null;
+  if (item.dt === "amount") {
+    const off = Math.min(dv * rate, unit) * qty;
+    return off > 0 ? { fixedAmount: { amount: round2(off) } } : null;
+  }
+  if (item.dt === "fixed_total") {
+    const off = Math.max(0, unit - dv * rate) * qty;
+    return off > 0 ? { fixedAmount: { amount: round2(off) } } : null;
+  }
+  return null;
 }
 
 const price = (line: Line) => Number(line.cost.amountPerQuantity.amount);
@@ -260,7 +299,7 @@ export function cartLinesDiscountsGenerateRun(
   const groups = new Map<string, Group>();
 
   for (const line of input.cart.lines) {
-    if (line.gift?.value || line.upsell?.value) continue;
+    if (line.gift?.value || line.upsell?.value || line.bundle?.value) continue;
     const variant = productOf(line);
     if (!variant) continue;
 
@@ -301,13 +340,39 @@ export function cartLinesDiscountsGenerateRun(
     );
   }
 
+  // Complete-the-bundle bars: complete sets among the lines tagged for each.
+  const bundleLines = new Map<string, Line[]>();
+  for (const line of input.cart.lines) {
+    const tag = line.bundle?.value;
+    if (tag && productOf(line)) bundleLines.set(tag, [...(bundleLines.get(tag) ?? []), line]);
+  }
+  for (const [tag, lines] of bundleLines) {
+    const [dealId, barId] = tag.split(":");
+    const deal = byId.get(dealId);
+    const bar = deal && [deal.bars, ...Object.values(deal.arms ?? {})].flat().find((b) => b.id === barId && b.k === "b");
+    if (!deal || !bar?.it?.length) continue;
+    const match = bundleSets(
+      bar.it,
+      lines.map((line) => ({ line, variant: productOf(line)!.id, qty: line.quantity, main: isEligible(deal, line) })),
+    );
+    if (match.sets <= 0) continue;
+    dealBars.set(deal.id, [...(dealBars.get(deal.id) ?? []), bar]);
+    const message = bar.m || deal.name;
+    bar.it.forEach((item, i) => {
+      for (const { line, qty } of match.items[i]) {
+        const value = bundleItemValue(item, line, qty, rate);
+        if (value) candidates.push({ message, targets: [{ cartLine: { id: line.id, quantity: qty } }], value });
+      }
+    });
+  }
+
   // Gifts: `_cartlift_gift=<dealId>`. Free only while a reached bar offers that variant.
   const giftsUsed = new Set<string>();
   for (const line of input.cart.lines) {
     const dealId = line.gift?.value;
     const variant = productOf(line);
     if (!dealId || !variant) continue;
-    const bar = (dealBars.get(dealId) ?? []).find((b) => b.gift === variant.id);
+    const bar = (dealBars.get(dealId) ?? []).find((b) => giftsOf(b).includes(variant.id));
     const key = `${dealId}|${variant.id}`;
     if (!bar || giftsUsed.has(key)) continue;
     giftsUsed.add(key);

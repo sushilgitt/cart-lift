@@ -1,4 +1,5 @@
-import { matchesTarget, reachedBar, type Targeted } from "./tiers";
+import { reachedBar, type Targeted } from "./tiers";
+import { bundleSets, dealMatches } from "./bundles";
 
 /**
  * Cart planning for the storefront cart watcher. Mirrors the Discount
@@ -21,12 +22,29 @@ export interface AjaxCart {
   items: AjaxLine[];
 }
 
+/** A bar as published in the gift config. */
+export interface GiftBar {
+  id: string;
+  q: number;
+  /** Free gift variants (progressive gifts already resolved). */
+  gifts?: number[];
+  /** Before multiple gifts: a single gift variant. */
+  gift?: number;
+  /** "b": a complete-the-bundle bar, with its items (`v: null` = the viewed product). */
+  k?: "b";
+  items?: { v: number | null; q: number }[];
+}
+
 /** One deal as published in the gift config (app/lib/sync.server.ts → buildGiftConfig). */
 export interface GiftDeal extends Targeted<number> {
   id: string;
   across?: boolean;
-  bars: { id: string; q: number; gift?: number }[];
+  /** Mix & match pool: products that also count toward the tiers. */
+  mm?: Targeted<number> | null;
+  bars: GiftBar[];
 }
+
+export const barGifts = (bar: GiftBar): number[] => bar.gifts ?? (bar.gift ? [bar.gift] : []);
 
 export interface GiftConfig {
   deals: GiftDeal[];
@@ -71,14 +89,35 @@ export function planGifts(
 
   const eligible = (deal: GiftDeal, line: AjaxLine) => {
     const member = cols[Number(line.product_id)];
-    return matchesTarget(deal, Number(line.product_id), (c) => (member ? member.includes(Number(c)) : null));
+    return dealMatches(deal, Number(line.product_id), (c) => (member ? member.includes(Number(c)) : null));
   };
+
+  // Complete-the-bundle bars: the sets among the lines tagged for each.
+  const bundleLines = new Map<string, AjaxLine[]>();
+  for (const line of items) {
+    const tag = line.properties?._cartlift_bundle;
+    if (tag) bundleLines.set(tag, [...(bundleLines.get(tag) ?? []), line]);
+  }
+  const reachedBundles: { deal: GiftDeal; bar: GiftBar }[] = [];
+  for (const [tag, lines] of bundleLines) {
+    const [dealId, barId] = tag.split(":");
+    const deal = byId.get(dealId);
+    const bar = deal?.bars.find((b) => b.id === barId && b.k === "b");
+    if (!deal || !bar) continue;
+    const tagged = [];
+    for (const line of lines) {
+      const main = eligible(deal, line);
+      if (main === null) return null;
+      tagged.push({ line, variant: Number(line.variant_id), qty: Number(line.quantity) || 0, main });
+    }
+    if (bundleSets(bar.items ?? [], tagged).sets > 0) reachedBundles.push({ deal, bar });
+  }
 
   // 1. Group deal units exactly like the Function.
   const groups = new Map<string, { deal: GiftDeal; units: number; bar: string | null }>();
   for (const line of items) {
     const props = line.properties ?? {};
-    if (props._cartlift_gift || props._cartlift_upsell) continue;
+    if (props._cartlift_gift || props._cartlift_upsell || props._cartlift_bundle) continue;
 
     let deal: GiftDeal | null = null;
     const tagged = props._cartlift ? byId.get(props._cartlift) : undefined;
@@ -111,10 +150,14 @@ export function planGifts(
 
   // 2. Gifts the reached bars unlock: one unit per (deal, gift variant).
   const want: GiftPlan["want"] = {};
+  const unlock = (dealId: string, bar: GiftBar) => {
+    for (const gift of barGifts(bar)) want[giftKey(dealId, gift)] = { deal: dealId, variant: Number(gift) };
+  };
   for (const g of groups.values()) {
-    const bar = reachedBar(g.deal.bars ?? [], g.units, g.bar);
-    if (bar?.gift) want[giftKey(g.deal.id, bar.gift)] = { deal: g.deal.id, variant: Number(bar.gift) };
+    const bar = reachedBar((g.deal.bars ?? []).filter((b) => b.k !== "b"), g.units, g.bar);
+    if (bar) unlock(g.deal.id, bar);
   }
+  for (const { deal, bar } of reachedBundles) unlock(deal.id, bar);
 
   // 3. Compare with the gift lines in the cart.
   const have = new Map<string, AjaxLine[]>();

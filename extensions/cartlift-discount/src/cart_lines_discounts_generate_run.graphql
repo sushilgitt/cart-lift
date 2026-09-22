@@ -24,6 +24,9 @@ query CartInput($collectionIds: [ID!]) {
       upsell: attribute(key: "_cartlift_upsell") {
         value
       }
+      bundle: attribute(key: "_cartlift_bundle") {
+        value
+      }
       merchandise {
         __typename
         ... on ProductVariant {

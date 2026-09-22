@@ -39,30 +39,44 @@ interface DealSpec {
   p?: number[];
   c?: number[];
   across?: boolean;
-  bars: { id?: string; q: number; pct?: number; gift?: number }[];
+  mm?: { tt: "ALL" | "PRODUCTS" | "COLLECTIONS" | "EXCEPT"; p?: number[]; c?: number[] };
+  bars: { id?: string; q: number; pct?: number; gift?: number; gifts?: number[]; bundle?: { v: number | null; q: number; pct?: number }[] }[];
 }
 
 const gid = (type: string, id: number) => `gid://shopify/${type}/${id}`;
 
 function fnConfig(deals: DealSpec[]): FnConfig {
+  const cols = deals.flatMap((d) => [...(d.tt === "COLLECTIONS" ? d.c ?? [] : []), ...(d.mm?.tt === "COLLECTIONS" ? d.mm.c ?? [] : [])]);
   return {
-    collectionIds: [...new Set(deals.filter((d) => d.tt === "COLLECTIONS").flatMap((d) => d.c ?? []))].map((c) =>
-      gid("Collection", c),
-    ),
+    collectionIds: [...new Set(cols)].map((c) => gid("Collection", c)),
     deals: deals.map((d) => ({
       id: d.id,
       tt: d.tt,
       p: (d.p ?? []).map((p) => gid("Product", p)),
       c: (d.c ?? []).map((c) => gid("Collection", c)),
       across: Boolean(d.across),
+      ...(d.mm
+        ? { mm: { tt: d.mm.tt, p: (d.mm.p ?? []).map((p) => gid("Product", p)), c: (d.mm.c ?? []).map((c) => gid("Collection", c)) } }
+        : {}),
       name: d.id,
       bars: d.bars.map((b, i) => ({
         id: b.id ?? `${d.id}-b${i}`,
         q: b.q,
-        k: "q" as const,
+        k: b.bundle ? ("b" as const) : ("q" as const),
         dt: b.pct ? ("percentage" as const) : ("none" as const),
         dv: b.pct ?? 0,
         ...(b.gift ? { gift: gid("ProductVariant", b.gift) } : {}),
+        ...(b.gifts ? { gifts: b.gifts.map((g) => gid("ProductVariant", g)) } : {}),
+        ...(b.bundle
+          ? {
+              it: b.bundle.map((it) => ({
+                v: it.v == null ? null : gid("ProductVariant", it.v),
+                q: it.q,
+                dt: it.pct ? ("percentage" as const) : ("none" as const),
+                dv: it.pct ?? 0,
+              })),
+            }
+          : {}),
       })),
     })),
   };
@@ -75,7 +89,14 @@ function giftConfig(deals: DealSpec[]) {
     p: d.p ?? [],
     c: d.c ?? [],
     across: Boolean(d.across),
-    bars: d.bars.map((b, i) => ({ id: b.id ?? `${d.id}-b${i}`, q: b.q, ...(b.gift ? { gift: b.gift } : {}) })),
+    ...(d.mm ? { mm: { tt: d.mm.tt, p: d.mm.p ?? [], c: d.mm.c ?? [] } } : {}),
+    bars: d.bars.map((b, i) => ({
+      id: b.id ?? `${d.id}-b${i}`,
+      q: b.q,
+      ...(b.gift ? { gift: b.gift } : {}),
+      ...(b.gifts ? { gifts: b.gifts } : {}),
+      ...(b.bundle ? { k: "b", items: b.bundle.map((it) => ({ v: it.v, q: it.q })) } : {}),
+    })),
   }));
   return { v: 1, g: out.some((d) => d.bars.some((b) => b.gift)), deals: out };
 }
@@ -90,6 +111,7 @@ interface Line {
   bar?: string;
   gift?: string;
   upsell?: string;
+  bundle?: string;
 }
 
 /** The /cart.js shape. */
@@ -105,6 +127,7 @@ const ajaxCart = (lines: Line[]) => ({
       ...(l.bar ? { _cartlift_bar: l.bar } : {}),
       ...(l.gift ? { _cartlift_gift: l.gift } : {}),
       ...(l.upsell ? { _cartlift_upsell: l.upsell } : {}),
+      ...(l.bundle ? { _cartlift_bundle: l.bundle } : {}),
     },
   })),
 });
@@ -125,6 +148,7 @@ function freeGifts(deals: DealSpec[], lines: Line[], cols: Record<number, number
         bar: l.bar ? { value: l.bar } : null,
         gift: l.gift ? { value: l.gift } : null,
         upsell: l.upsell ? { value: l.upsell } : null,
+        bundle: l.bundle ? { value: l.bundle } : null,
         merchandise: {
           __typename: "ProductVariant",
           id: gid("ProductVariant", l.variant),
@@ -326,6 +350,45 @@ describe("cart watcher agrees with the Discount Function", () => {
     );
     expect(swap.plan.updates).toEqual({ g: 0 });
     expect(swap.gifts.map((g) => g.variant)).toEqual([GIFT]);
+  });
+
+  test("progressive gifts: all of the reached bar's gifts, none of the next tier's", () => {
+    const deal: DealSpec = { id: "d1", tt: "ALL", bars: [{ q: 1 }, { q: 2, gifts: [444] }, { q: 3, gifts: [444, GIFT] }] };
+    expect(reconcile([deal], [{ key: "a", product: 1, variant: 11, qty: 2 }]).gifts.map((g) => g.variant)).toEqual([444]);
+    expect(reconcile([deal], [{ key: "a", product: 1, variant: 11, qty: 3 }]).gifts.map((g) => g.variant).sort()).toEqual([444, GIFT]);
+  });
+
+  test("a complete bundle unlocks its gift; breaking the set removes it", () => {
+    const deal: DealSpec = {
+      id: "d1",
+      tt: "PRODUCTS",
+      p: [1],
+      bars: [{ q: 1 }, { id: "set", q: 2, gifts: [GIFT], bundle: [{ v: null, q: 1 }, { v: 70, q: 1, pct: 20 }] }],
+    };
+    const complete: Line[] = [
+      { key: "m", product: 1, variant: 11, qty: 1, bundle: "d1:set" },
+      { key: "c", product: 7, variant: 70, qty: 1, bundle: "d1:set" },
+    ];
+    expect(reconcile([deal], complete).gifts.map((g) => g.variant)).toEqual([GIFT]);
+    const broken: Line[] = [complete[0], { key: "g", product: 900, variant: GIFT, qty: 1, gift: "d1" }];
+    const { plan: p } = reconcile([deal], broken);
+    expect(p.updates).toEqual({ g: 0 });
+    // Bundle lines never count toward the quantity tiers.
+    expect(reconcile([{ ...deal, bars: [{ q: 1, gifts: [444] }, ...deal.bars.slice(1)] }], [complete[0]]).gifts).toEqual([]);
+  });
+
+  test("mix & match: pool products reach the gift tier together with the deal's product", () => {
+    const deal: DealSpec = { id: "d1", tt: "PRODUCTS", p: [1], across: true, mm: { tt: "PRODUCTS", p: [7, 8] }, bars: [{ q: 1 }, { q: 3, gifts: [GIFT] }] };
+    const lines: Line[] = [
+      { key: "a", product: 1, variant: 11, qty: 1, deal: "d1" },
+      { key: "b", product: 7, variant: 70, qty: 1, deal: "d1" },
+      { key: "c", product: 8, variant: 80, qty: 1, deal: "d1" },
+    ];
+    expect(reconcile([deal], lines).gifts.map((g) => g.variant)).toEqual([GIFT]);
+    // Collection pool with unknown membership: the watcher stays out of it.
+    const byCollection: DealSpec = { ...deal, mm: { tt: "COLLECTIONS", c: [5] } };
+    expect(plan(giftConfig([byCollection]), ajaxCart(lines), {})).toBeNull();
+    expect(reconcile([byCollection], lines, { 1: [], 7: [5], 8: [5] }).gifts.map((g) => g.variant)).toEqual([GIFT]);
   });
 
   test("respects gifts the shopper dismissed", () => {

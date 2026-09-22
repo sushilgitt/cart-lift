@@ -48,7 +48,14 @@ const SHIRT_SWATCHES = [
 /** A product page with a Dawn-like form, the widget's data block and the built widget. */
 function productPage(
   deal: Json,
-  { product = TEE as Json, variant = String((product.variants as Json[])[0].id), extra = {} as Json, inForm = "", recommendations = [] as Json[] } = {},
+  {
+    product = TEE as Json,
+    variant = String((product.variants as Json[])[0].id),
+    extra = {} as Json,
+    inForm = "",
+    recommendations = [] as Json[],
+    store = {} as Record<string, Json>,
+  } = {},
 ) {
   const window = new Window({ url: "https://shop.test/products/tee" });
   const document = window.document;
@@ -59,6 +66,9 @@ function productPage(
     fetch: async (url: string, init?: { body?: string }) => {
       posts.push({ url: String(url), body: init?.body ? JSON.parse(init.body) : null });
       if (String(url).includes("recommendations/products.json")) return { ok: true, json: async () => ({ products: recommendations }) };
+      // Storefront JSON endpoints (mix & match pool): exact path → body.
+      const path = String(url).split("?")[0];
+      if (store[path]) return { ok: true, json: async () => store[path] };
       return { ok: true, json: async () => ({ items: [] }) };
     },
     Shopify: { currency: { rate: "1.0" }, routes: { root: "/" } },
@@ -309,5 +319,142 @@ describe("Phase 1: upsells, placement, events", () => {
     page.click('[data-bar="b2"]');
     const last = page.events.filter(([n]) => n === "cartlift:variants-changed").pop()?.[1];
     expect(last).toEqual({ dealId: "d1", barId: "b2", variantIdQuantities: { 11: 3 }, price: 4800, formattedPrice: "$48.00" });
+  });
+});
+
+describe("Phase 2: gifts", () => {
+  const gift = (id: number, title: string) => ({ id, title, image: `https://cdn/${id}.png`, price: "5.00", text: "+ FREE" });
+
+  test("a bar with several gifts shows and adds each of them", () => {
+    const page = productPage(deal([bar({ id: "b1" }), bar({ id: "b2", qty: 2, selected: true, gifts: [gift(91, "Socks"), gift(92, "Cap")] })]));
+    expect(page.document.querySelectorAll(".cl-bar.is-selected .cl-gift")).toHaveLength(2);
+    expect(page.submit()).toBe(true);
+    expect(page.added()?.items).toEqual([
+      { id: 11, quantity: 2, properties: { _cartlift: "d1", _cartlift_arm: "A" } },
+      { id: 91, quantity: 1, properties: { _cartlift_gift: "d1" } },
+      { id: 92, quantity: 1, properties: { _cartlift_gift: "d1" } },
+    ]);
+  });
+
+  test("the gift track shows each tier's new gifts, unlocked up to the selected bar", () => {
+    const page = productPage(
+      deal(
+        [
+          bar({ id: "b1" }),
+          bar({ id: "b2", qty: 2, selected: true, gifts: [gift(91, "Socks")] }),
+          // Progressive: tier 3 carries tier 2's gift too; the track shows only what's new.
+          bar({ id: "b3", qty: 3, gifts: [gift(91, "Socks"), gift(92, "Cap")] }),
+        ],
+        { style: { layout: "vertical", giftTrack: true } },
+      ),
+    );
+    const steps = () => [...page.document.querySelectorAll(".cl-gt-step")].map((s) => [s.className.includes("is-unlocked"), s.querySelectorAll("img").length, s.querySelector(".cl-gt-label")?.textContent]);
+    expect(steps()).toEqual([
+      [true, 1, "Unlocked"],
+      [false, 1, "Buy 3"],
+    ]);
+    page.click('[data-bar="b3"]');
+    expect(steps()).toEqual([
+      [true, 1, "Unlocked"],
+      [true, 1, "Unlocked"],
+    ]);
+  });
+});
+
+describe("Phase 2: complete the bundle", () => {
+  const bundleBar = bar({
+    id: "set",
+    kind: "bundle",
+    qty: 2,
+    title: "The set: {{price}}",
+    selected: true,
+    items: [
+      { id: "i1", v: null, q: 1, dt: "none", dv: 0 },
+      { id: "i2", v: 70, q: 1, dt: "percentage", dv: 25, title: "Cap", image: "https://cdn/cap.png", price: "20.00" },
+    ],
+  });
+
+  test("prices the set per item and lists the items", () => {
+    const page = productPage(deal([bar({ id: "b1" }), bundleBar]));
+    // Tee $20 + cap $20 − 25% = $35; was $40.
+    expect(page.$(".cl-bar.is-selected .cl-price")?.textContent).toBe("$35.00");
+    expect(page.$(".cl-bar.is-selected .cl-full")?.textContent).toBe("$40.00");
+    expect(page.$(".cl-bar.is-selected .cl-bar-title")?.textContent).toBe("The set: $35.00");
+    expect([...page.document.querySelectorAll(".cl-bundle-item .cl-extra-text")].map((e) => e.textContent)).toEqual(["Tee — S", "Cap"]);
+  });
+
+  test("adds every item tagged for the bundle, the viewed product marked as main", () => {
+    const page = productPage(deal([bar({ id: "b1" }), bundleBar]));
+    expect(page.submit()).toBe(true);
+    expect(page.added()?.items).toEqual([
+      { id: 11, quantity: 1, properties: { _cartlift_bundle: "d1:set", _cartlift_arm: "A", _cartlift_main: "1" } },
+      { id: 70, quantity: 1, properties: { _cartlift_bundle: "d1:set", _cartlift_arm: "A" } },
+    ]);
+  });
+});
+
+describe("Phase 2: mix & match", () => {
+  const mm = { tt: "PRODUCTS", p: [7, 8], c: [], ph: ["cap", "belt"], ch: [], title: "Pick your items", button: "Add", names: true, photo: 64 };
+  const store = {
+    "/products/cap.js": { id: 7, title: "Cap", featured_image: "//cdn/cap.png", variants: [{ id: 70, title: "Default Title", price: 1200, available: true }] },
+    "/products/belt.js": {
+      id: 8,
+      title: "Belt",
+      featured_image: null,
+      variants: [
+        { id: 80, title: "S", price: 1500, available: true },
+        { id: 81, title: "L", price: 1600, available: true },
+      ],
+    },
+  };
+  const mixDeal = deal([bar({ id: "b1" }), bar({ id: "b3", qty: 3, dt: "percentage", dv: 10, selected: true })], { mm, across: true });
+
+  test("the selected bar has one slot per unit; the chooser fills a slot", async () => {
+    const page = productPage(mixDeal, { store });
+    const slots = page.document.querySelectorAll(".cl-bar.is-selected .cl-slot");
+    expect(slots).toHaveLength(3);
+    expect(slots[0].className).toContain("is-filled");
+    page.click('.cl-slot[data-slot="1"]');
+    expect(page.$(".cl-modal h2")?.textContent).toBe("Pick your items");
+    await page.settle();
+    expect([...page.document.querySelectorAll(".cl-pick-name")].map((n) => n.textContent)).toEqual(["Cap", "Belt"]);
+    expect(page.$('.cl-pick[data-product="7"] img')?.getAttribute("src")).toBe("https://cdn/cap.png");
+    page.click('.cl-pick[data-product="7"] .cl-pick-add');
+    expect(page.$(".cl-modal")).toBeNull();
+    expect(page.$('.cl-slot.is-filled .cl-slot-change[data-slot="1"]')).not.toBeNull();
+  });
+
+  test("with every slot picked, the price uses the picked products; lines add them", async () => {
+    const page = productPage(mixDeal, { store });
+    page.click('.cl-slot[data-slot="1"]');
+    await page.settle();
+    page.click('.cl-pick[data-product="7"] .cl-pick-add');
+    page.click('.cl-slot[data-slot="2"]');
+    await page.settle();
+    page.choose('.cl-pick[data-product="8"] select', "81");
+    page.click('.cl-pick[data-product="8"] .cl-pick-add');
+    // $20 + $12 + $16 = $48, − 10% = $43.20.
+    expect(page.$(".cl-bar.is-selected .cl-price")?.textContent).toBe("$43.20");
+    expect(page.submit()).toBe(true);
+    expect(page.added()?.items).toEqual([
+      { id: 11, quantity: 1, properties: { _cartlift: "d1", _cartlift_arm: "A" } },
+      { id: 70, quantity: 1, properties: { _cartlift: "d1", _cartlift_arm: "A" } },
+      { id: 81, quantity: 1, properties: { _cartlift: "d1", _cartlift_arm: "A" } },
+    ]);
+  });
+
+  test("empty slots take the viewed product; the chooser searches and closes on Escape", async () => {
+    const page = productPage(mixDeal, { store });
+    expect(page.input("quantity")).toBe("3");
+    expect(page.submit()).toBe(false); // one line (3 × the viewed product): the theme adds it
+    page.click('.cl-slot[data-slot="1"]');
+    await page.settle();
+    const search = page.$(".cl-modal-search") as unknown as HTMLInputElement;
+    search.value = "bel";
+    search.dispatchEvent(new (page.document.defaultView as unknown as { Event: typeof Event }).Event("input"));
+    expect([...page.document.querySelectorAll(".cl-pick-name")].map((n) => n.textContent)).toEqual(["Belt"]);
+    const view = page.document.defaultView as unknown as { KeyboardEvent: typeof KeyboardEvent };
+    page.document.dispatchEvent(new view.KeyboardEvent("keydown", { key: "Escape" }) as never);
+    expect(page.$(".cl-modal")).toBeNull();
   });
 });

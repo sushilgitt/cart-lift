@@ -47,7 +47,7 @@ export default function Dashboard() {
 
   return (
     <s-page heading="CartLift">
-      <s-button slot="primary-action" variant="primary" onClick={() => navigate("/app/deals/new?type=QUANTITY_BREAK")}>
+      <s-button slot="primary-action" variant="primary" onClick={() => navigate("/app/deals/new?template=quantity_breaks")}>
         Create deal
       </s-button>
 

@@ -3,7 +3,9 @@ import type { Deal, Shop } from "@prisma/client";
 import prisma from "../db.server";
 import { gql, type AdminGraphql } from "./shop.server";
 import {
+  effectiveGifts,
   metafieldKey,
+  mixMatchPool,
   normalizeConfig,
   numericId,
   renderText,
@@ -59,16 +61,22 @@ export function buildFunctionConfig(deals: Deal[]) {
     const config = normalizeConfig(deal.config, deal.type as DealTypeKey);
     const collections = refs(deal.collections).map((c) => c.id);
     if (deal.targetType === "COLLECTIONS") collections.forEach((c) => collectionIds.add(c));
+    // Mix & match pool: products that also count toward the tiers.
+    const pool = mixMatchPool(config, deal);
+    if (pool?.tt === "COLLECTIONS") pool.collections.forEach((c) => collectionIds.add(c.id));
     const bars = config.bars.map((bar) => ({
       id: bar.id,
       q: bar.qty,
-      k: bar.kind === "bxgy" ? "x" : "q",
+      k: bar.kind === "bxgy" ? "x" : bar.kind === "bundle" ? "b" : "q",
       ...(bar.kind === "bxgy" ? { g: bar.get } : {}),
       dt: bar.discountType,
       dv: bar.discountValue,
       m: discountMessage(bar, deal.name, config.discountName),
       ...(bar.kind === "bxgy" && bar.extraPercent > 0 ? { xp: bar.extraPercent } : {}),
-      ...(bar.gift ? { gift: bar.gift.id } : {}),
+      ...(bar.kind === "bundle"
+        ? { it: bar.items.map((it) => ({ v: it.variant?.id ?? null, q: it.qty, dt: it.discountType, dv: it.discountValue })) }
+        : {}),
+      ...(effectiveGifts(config, bar).length ? { gifts: effectiveGifts(config, bar).map((g) => g.id) } : {}),
       ...(bar.upsells.length
         ? {
             ups: bar.upsells
@@ -87,6 +95,7 @@ export function buildFunctionConfig(deals: Deal[]) {
       p: refs(deal.products).map((p) => p.id),
       c: collections,
       across: config.across,
+      ...(pool ? { mm: { tt: pool.tt, p: pool.products.map((p) => p.id), c: pool.collections.map((c) => c.id) } } : {}),
       name: deal.name,
       bars,
     };
@@ -119,24 +128,33 @@ export function buildStorefrontConfig(shop: Shop, deals: Deal[], appUrl: string)
  * IDs are numeric to match the Ajax Cart API.
  */
 export function buildGiftConfig(deals: Deal[]) {
+  const id = (gid: string) => Number(numericId(gid));
   const out = deals.map((deal) => {
     const config = normalizeConfig(deal.config, deal.type as DealTypeKey);
+    const pool = mixMatchPool(config, deal);
     return {
       id: deal.id,
       tt: deal.targetType,
-      p: refs(deal.products).map((p) => Number(numericId(p.id))),
-      c: refs(deal.collections).map((c) => Number(numericId(c.id))),
+      p: refs(deal.products).map((p) => id(p.id)),
+      c: refs(deal.collections).map((c) => id(c.id)),
       across: config.across,
-      bars: config.bars.map((bar) => ({
-        id: bar.id,
-        q: bar.qty,
-        ...(bar.gift ? { gift: Number(numericId(bar.gift.id)) } : {}),
-      })),
+      ...(pool ? { mm: { tt: pool.tt, p: pool.products.map((p) => id(p.id)), c: pool.collections.map((c) => id(c.id)) } } : {}),
+      bars: config.bars.map((bar) => {
+        const gifts = effectiveGifts(config, bar).map((g) => id(g.id));
+        return {
+          id: bar.id,
+          q: bar.qty,
+          ...(gifts.length ? { gifts } : {}),
+          ...(bar.kind === "bundle"
+            ? { k: "b" as const, items: bar.items.map((it) => ({ v: it.variant ? id(it.variant.id) : null, q: it.qty })) }
+            : {}),
+        };
+      }),
     };
   });
-  // `g` (any gift) gated the watcher before it also merged lines; kept one
-  // release for theme assets still checking it.
-  return { v: 1, g: out.some((d) => d.bars.some((b) => b.gift)), deals: out };
+  // `g` (any gift) gated the watcher before it also merged lines; kept for
+  // theme assets still checking it.
+  return { v: 2, g: out.some((d) => d.bars.some((b) => b.gifts)), deals: out };
 }
 
 const CREATE_DISCOUNT = `#graphql

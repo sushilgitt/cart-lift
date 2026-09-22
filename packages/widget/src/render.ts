@@ -1,5 +1,5 @@
-import { escapeHtml as esc, formatMoney, moneyToCents, priceBar, renderText } from "../../core/src";
-import type { RenderCtx, RenderState, SfBar, SfDeal, SfProduct, SfStyle, SfVariant } from "./types";
+import { escapeHtml as esc, formatMoney, moneyToCents, priceBar, priceBundle, priceMixed, renderText } from "../../core/src";
+import type { RenderCtx, RenderState, SfBar, SfDeal, SfGift, SfProduct, SfStyle, SfVariant } from "./types";
 import { optionNames, optionValues, valueAvailable, valueImage, variantValues } from "./variants";
 
 /** Renders deal bars to HTML. Shared by the storefront and the admin live preview. */
@@ -40,6 +40,25 @@ function styleVars(style: SfStyle): string {
 
 const cssUrl = (url: string) => "url('" + esc(url).replace(/'/g, "%27") + "')";
 
+/** A bar's gifts (older configs had a single `gift`). */
+export const barGifts = (bar: SfBar): SfGift[] => bar.gifts ?? (bar.gift ? [bar.gift] : []);
+
+/** Mix & match slots of a bar: one per unit (quantity and BXGY bars). */
+export const mixSlots = (deal: SfDeal, bar: SfBar) => (deal.mm && bar.kind !== "bundle" ? Math.max(1, bar.qty) : 0);
+
+/** Price of a bundle bar for the current variant (cents). */
+export function bundlePrice(bar: SfBar, unit: number, rate: number) {
+  return priceBundle(
+    (bar.items || []).map((it) => ({
+      unit: it.v == null ? unit : moneyToCents(it.price, rate),
+      q: it.q,
+      dt: it.dt,
+      dv: it.dv,
+    })),
+    rate,
+  );
+}
+
 export function initialBar(bars: SfBar[]): string | undefined {
   return (bars.find((b) => b.selected) || bars[0])?.id;
 }
@@ -54,6 +73,9 @@ export function defaultUnits(bar: SfBar | undefined, product: SfProduct): (numbe
 /** Whether the selected bar shows variant pickers, and how many rows. */
 export function pickerRows(deal: SfDeal, bar: SfBar, product: SfProduct): number {
   if ((product.variants || []).length < 2) return 0;
+  // Bundle bars use the viewed variant; mix & match units are picked in the chooser.
+  if (bar.kind === "bundle") return deal.showVariantPicker ? 1 : 0;
+  if (deal.mm) return deal.showVariantPicker || deal.variantPerUnit ? 1 : 0;
   if (deal.variantPerUnit) return bar.qty;
   if (deal.showVariantPicker && bar.qty === 1) return 1;
   return 0;
@@ -123,6 +145,88 @@ export function upsellEntries(bar: SfBar, state: RenderState, ctx: RenderCtx): U
 /** Whether an upsell row is ticked. */
 export const upsellOn = (entry: UpsellEntry, state: RenderState) =>
   state.upsells && has(state.upsells, entry.key) ? state.upsells[entry.key] : entry.checked;
+
+/** Progressive gifts: each tier's newly unlocked gifts, locked or unlocked for the selected bar. */
+function renderGiftTrack(deal: SfDeal, bars: SfBar[], state: RenderState): string {
+  if (!deal.style?.giftTrack) return "";
+  const tiers = bars.filter((b) => b.kind !== "bundle" && barGifts(b).length).sort((a, b) => a.qty - b.qty);
+  if (!tiers.length) return "";
+  const selected = bars.find((b) => b.id === state.barId);
+  const reached = selected && selected.kind !== "bundle" ? selected.qty : 0;
+  const seen = new Set<number>();
+  let html = '<ol class="cl-gift-track">';
+  for (const tier of tiers) {
+    const fresh = barGifts(tier).filter((g) => !seen.has(g.id));
+    fresh.forEach((g) => seen.add(g.id));
+    if (!fresh.length) continue;
+    const open = reached >= tier.qty;
+    html +=
+      '<li class="cl-gt-step' + (open ? " is-unlocked" : "") + '">' +
+      '<span class="cl-gt-gifts">' +
+      fresh
+        .map((g) =>
+          g.image
+            ? '<img class="cl-thumb" src="' + esc(g.image) + '" alt="' + esc(g.title) + '" loading="lazy">'
+            : '<span class="cl-gt-name">' + esc(g.title) + "</span>",
+        )
+        .join("") +
+      "</span>" +
+      '<span class="cl-gt-label">' + (open ? "Unlocked" : "Buy " + tier.qty) + "</span></li>";
+  }
+  return html + "</ol>";
+}
+
+function renderBundleItems(bar: SfBar, ctx: RenderCtx, variant: SfVariant, fmt: (c: number) => string): string {
+  const unit = Number(variant.price) || 0;
+  let html = '<div class="cl-bundle-items">';
+  for (const it of bar.items || []) {
+    const main = it.v == null;
+    const full = main ? unit : moneyToCents(it.price, ctx.rate);
+    const pay = priceBundle([{ unit: full, q: 1, dt: it.dt, dv: it.dv }], ctx.rate).total;
+    const title = main ? ctx.product.title || "" : it.title || "";
+    const image = main ? null : it.image;
+    html +=
+      '<div class="cl-bundle-item">' +
+      (image ? '<img class="cl-thumb" src="' + esc(image) + '" alt="" loading="lazy">' : '<span class="cl-thumb cl-thumb--main" aria-hidden="true"></span>') +
+      '<span class="cl-extra-text">' + esc(title) + (it.q > 1 ? " × " + it.q : "") + (main && variant.title && variant.title !== "Default Title" ? " — " + esc(variant.title) : "") + "</span>" +
+      '<span class="cl-extra-price">' + esc(fmt(pay * it.q)) + (full > pay ? "<s>" + esc(fmt(full * it.q)) + "</s>" : "") + "</span></div>";
+  }
+  return html + "</div>";
+}
+
+function renderSlots(
+  deal: SfDeal,
+  slots: number,
+  state: RenderState,
+  ctx: RenderCtx,
+  variant: SfVariant,
+  fmt: (c: number) => string,
+): string {
+  const mm = deal.mm!;
+  const photo = safeCss(mm.photo) ? Math.min(160, Math.max(24, Number(mm.photo))) : 64;
+  let html = '<div class="cl-slots" style="--cl-slot-photo:' + photo + 'px">';
+  for (let i = 0; i < slots; i++) {
+    const pick = i === 0 ? null : state.mix?.[i];
+    if (i === 0 || pick) {
+      const title = i === 0 ? (ctx.product.title || "") + (variant.title && variant.title !== "Default Title" ? " — " + variant.title : "") : pick!.title;
+      const price = i === 0 ? Number(variant.price) || 0 : pick!.price;
+      html +=
+        '<div class="cl-slot is-filled">' +
+        '<span class="cl-unit-no">#' + (i + 1) + "</span>" +
+        (pick?.image ? '<img class="cl-thumb" src="' + esc(pick.image) + '" alt="" loading="lazy">' : "") +
+        '<span class="cl-extra-text">' + (mm.names === false ? "" : esc(title)) + "</span>" +
+        '<span class="cl-extra-price">' + esc(fmt(price)) + "</span>" +
+        (i === 0 ? "" : '<button type="button" class="cl-slot-change" data-slot="' + i + '">' + esc(mm.button || "Choose") + "</button>") +
+        "</div>";
+    } else {
+      html +=
+        '<button type="button" class="cl-slot" data-slot="' + i + '">' +
+        '<span class="cl-unit-no">#' + (i + 1) + "</span>" +
+        '<span class="cl-extra-text">' + esc(mm.button || "Choose") + "</span></button>";
+    }
+  }
+  return html + "</div>";
+}
 
 function discountText(bar: SfBar, fmt: (c: number) => string, rate: number): string {
   const dv = Math.max(0, Number(bar.dv) || 0);
@@ -215,14 +319,23 @@ export function renderDeal(deal: SfDeal, state: RenderState, ctx: RenderCtx): st
   if (style.showBlockTitle && style.blockTitle) {
     html += '<div class="cl-heading"><span>' + esc(style.blockTitle) + "</span></div>";
   }
+  html += renderGiftTrack(deal, bars, state);
   html += '<div class="cl-bars" role="radiogroup">';
 
   bars.forEach((bar) => {
     const selected = bar.id === state.barId;
-    const p = priceBar(bar, unit, compare, ctx.rate);
+    const bundle = bar.kind === "bundle";
+    const slots = mixSlots(deal, bar);
+    const picks = selected && slots ? Array.from({ length: slots - 1 }, (_, i) => state.mix?.[i + 1]) : [];
+    const p = bundle
+      ? { ...bundlePrice(bar, unit, ctx.rate), unit: 0 }
+      : picks.length && picks.every(Boolean)
+        ? { ...priceMixed(bar, [unit, ...picks.map((x) => x!.price)], ctx.rate), unit: 0 }
+        : priceBar(bar, unit, compare, ctx.rate);
+    if (!p.unit) p.unit = Math.round(p.total / Math.max(1, bar.qty));
     const compareUnit = Number(variant.compare_at_price) > unit ? Number(variant.compare_at_price) : unit;
     const vars = {
-      quantity: bar.qty,
+      quantity: bundle ? (bar.items || []).reduce((sum, it) => sum + it.q, 0) : bar.qty,
       buy: bar.kind === "bxgy" ? bar.qty - (bar.get || 0) : bar.qty,
       get: bar.get || 0,
       price: fmt(p.total),
@@ -268,20 +381,22 @@ export function renderDeal(deal: SfDeal, state: RenderState, ctx: RenderCtx): st
     if (soldOut) html += '<span class="cl-soldout">Sold out</span>';
     html += '<span class="cl-price">' + esc(fmt(p.total)) + "</span>";
     if (p.full > p.total) html += '<span class="cl-full">' + esc(fmt(p.full)) + "</span>";
-    if (style.showUnitPrice && bar.qty > 1) html += '<span class="cl-unit">' + esc(fmt(p.unit)) + " / each</span>";
+    if (style.showUnitPrice && bar.qty > 1 && !bundle) html += '<span class="cl-unit">' + esc(fmt(p.unit)) + " / each</span>";
     html += "</div>";
 
-    // Extras: variant pickers (selected bar only), gift, upsells.
+    // Extras: bundle items, mix & match slots, variant pickers (selected bar only), gifts, upsells.
     let extras = "";
+    if (bundle) extras += renderBundleItems(bar, ctx, variant, fmt);
+    if (selected && slots > 1) extras += renderSlots(deal, slots, state, ctx, variant, fmt);
     if (rows) extras += renderPickers(deal, bar, rows, state, ctx, variant);
-    if (bar.gift) {
-      const giftPrice = moneyToCents(bar.gift.price, ctx.rate);
+    barGifts(bar).forEach((gift) => {
+      const giftPrice = moneyToCents(gift.price, ctx.rate);
       extras +=
         '<div class="cl-gift">' +
-        (bar.gift.image ? '<img class="cl-thumb" src="' + esc(bar.gift.image) + '" alt="" loading="lazy">' : "") +
-        '<span class="cl-extra-text">' + text(bar.gift.text || "+ FREE gift", vars) + " — " + esc(bar.gift.title) + "</span>" +
+        (gift.image ? '<img class="cl-thumb" src="' + esc(gift.image) + '" alt="" loading="lazy">' : "") +
+        '<span class="cl-extra-text">' + text(gift.text || "+ FREE gift", vars) + " — " + esc(gift.title) + "</span>" +
         '<span class="cl-extra-price">' + esc(fmt(0)) + (giftPrice ? "<s>" + esc(fmt(giftPrice)) + "</s>" : "") + "</span></div>";
-    }
+    });
     upsellEntries(bar, state, ctx).forEach((up) => {
       if (up.onlyWhenSelected && !selected) return;
       const pay = priceBar({ kind: "qty", qty: 1, dt: up.dt, dv: up.dv }, up.full, 0, ctx.rate).total;

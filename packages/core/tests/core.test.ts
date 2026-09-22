@@ -1,5 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
+  bundleSets,
+  dealMatches,
   escapeHtml,
   formatMoney,
   matchesTarget,
@@ -7,6 +9,8 @@ import {
   moneyToCents,
   planGifts,
   priceBar,
+  priceBundle,
+  priceMixed,
   reachedBar,
   renderText,
   type AjaxCart,
@@ -118,5 +122,42 @@ describe("cart planning", () => {
   test("merges a plain line into the tagged line of the same variant", () => {
     expect(mergePlan(cart(line("t", 11, 1, { _cartlift: "d1" }), line("p", 11, 2)))).toEqual({ p: 0, t: 3 });
     expect(mergePlan(cart(line("t", 11, 1, { _cartlift: "d1" }), line("p", 12, 2)))).toEqual({});
+  });
+});
+
+describe("Phase 2 rules", () => {
+  test("dealMatches: the deal's targeting or its mix & match pool", () => {
+    const deal = { tt: "PRODUCTS" as const, p: [1], mm: { tt: "COLLECTIONS" as const, c: [5] } };
+    expect(dealMatches(deal, 1, () => false)).toBe(true);
+    expect(dealMatches(deal, 2, (c) => c === 5)).toBe(true);
+    expect(dealMatches(deal, 2, () => false)).toBe(false);
+    expect(dealMatches(deal, 2, () => null)).toBeNull();
+  });
+
+  test("bundleSets: complete sets and which units form them", () => {
+    const items = [{ v: null, q: 1 }, { v: 70, q: 2 }];
+    const lines = [
+      { line: "main", variant: 11, qty: 3, main: true },
+      { line: "capA", variant: 70, qty: 3, main: true },
+      { line: "capB", variant: 70, qty: 2, main: true },
+    ];
+    const match = bundleSets(items, lines);
+    // 5 caps → 2 sets of 2; 3 mains → 2 used. A cap line isn't a "main" even if eligible.
+    expect(match.sets).toBe(2);
+    expect(match.items[0]).toEqual([{ line: "main", qty: 2 }]);
+    expect(match.items[1]).toEqual([{ line: "capA", qty: 3 }, { line: "capB", qty: 1 }]);
+    expect(bundleSets(items, [lines[0]]).sets).toBe(0);
+  });
+
+  test("priceBundle and priceMixed", () => {
+    expect(priceBundle([{ unit: 2000, q: 1, dt: "none", dv: 0 }, { unit: 2000, q: 1, dt: "percentage", dv: 25 }])).toEqual({
+      total: 3500,
+      full: 4000,
+      saved: 500,
+      savedPct: 13,
+    });
+    expect(priceMixed({ kind: "qty", qty: 3, dt: "percentage", dv: 10 }, [2000, 1200, 1600]).total).toBe(4320);
+    expect(priceMixed({ kind: "qty", qty: 2, dt: "amount", dv: 15 }, [2000, 1000]).total).toBe(500);
+    expect(priceMixed({ kind: "bxgy", qty: 3, get: 1, dt: "percentage", dv: 100 }, [2000, 1200, 1600]).total).toBe(3600);
   });
 });

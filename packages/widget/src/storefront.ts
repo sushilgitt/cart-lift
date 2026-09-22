@@ -1,6 +1,16 @@
-import { formatMoney, matchesTarget, priceBar } from "../../core/src";
-import { defaultUnits, initialBar, pickerRows, renderDeal, upsellEntries, upsellOn } from "./render";
-import type { RenderState, SfArm, SfData, SfDeal, SfProduct, SfRecommended } from "./types";
+import { escapeHtml as esc, formatMoney, matchesTarget, priceBar, priceMixed } from "../../core/src";
+import {
+  barGifts,
+  bundlePrice,
+  defaultUnits,
+  initialBar,
+  mixSlots,
+  pickerRows,
+  renderDeal,
+  upsellEntries,
+  upsellOn,
+} from "./render";
+import type { MixPick, RenderState, SfArm, SfBar, SfData, SfDeal, SfMixMatch, SfProduct, SfRecommended } from "./types";
 import { withOption } from "./variants";
 
 /*
@@ -190,6 +200,151 @@ function complementaryFor(productId: string | number): Promise<SfRecommended[]> 
   return request;
 }
 
+// ---------------------------------------------------------------------------
+// Mix & match: the pool's products and the chooser
+// ---------------------------------------------------------------------------
+
+interface PoolProduct {
+  id: number;
+  title: string;
+  image: string | null;
+  variants: { id: number; title: string; price: number; available: boolean }[];
+}
+
+const absolute = (url: unknown) => {
+  const u = typeof url === "string" ? url : "";
+  return u.startsWith("//") ? "https:" + u : u || null;
+};
+
+const getJson = (url: string) =>
+  fetch(url, { headers: { Accept: "application/json" } })
+    .then((r) => (r.ok ? r.json() : null))
+    .catch(() => null);
+
+/** Up to 24 products of the pool, with presentment prices from /products/<handle>.js. */
+const pools = new Map<string, Promise<PoolProduct[]>>();
+function loadPool(mm: SfMixMatch): Promise<PoolProduct[]> {
+  const key = JSON.stringify([mm.tt, mm.ph, mm.ch, mm.p]);
+  let request = pools.get(key);
+  if (request) return request;
+  request = (async () => {
+    let handles: string[] = [];
+    if (mm.tt === "PRODUCTS") {
+      handles = mm.ph || [];
+    } else if (mm.tt === "COLLECTIONS") {
+      for (const h of mm.ch || []) {
+        const json = await getJson(root() + "collections/" + encodeURIComponent(h) + "/products.json?limit=50");
+        for (const p of json?.products || []) if (p?.handle) handles.push(p.handle);
+      }
+    } else {
+      const json = await getJson(root() + "products.json?limit=50");
+      for (const p of json?.products || []) {
+        if (!p?.handle) continue;
+        if (mm.tt === "EXCEPT" && (mm.p || []).includes(Number(p.id))) continue;
+        handles.push(p.handle);
+      }
+    }
+    handles = [...new Set(handles)].slice(0, 24);
+    const products = await Promise.all(handles.map((h) => getJson(root() + "products/" + encodeURIComponent(h) + ".js")));
+    return products
+      .filter((p) => p && Array.isArray(p.variants))
+      .map((p) => ({
+        id: Number(p.id),
+        title: String(p.title || ""),
+        image: absolute(p.featured_image),
+        variants: p.variants.map((v: { id: number; title: string; price: number; available: boolean }) => ({
+          id: Number(v.id),
+          title: String(v.title || ""),
+          price: Number(v.price) || 0,
+          available: v.available !== false,
+        })),
+      }))
+      .filter((p) => p.variants.some((v: { available: boolean }) => v.available));
+  })();
+  pools.set(key, request);
+  return request;
+}
+
+/** The chooser dialog. Styled with the widget's colours (copied from `from`). */
+function openChooser(mm: SfMixMatch, moneyFormat: string, from: HTMLElement, onPick: (pick: MixPick) => void) {
+  const trigger = document.activeElement as HTMLElement | null;
+  const backdrop = document.createElement("div");
+  backdrop.className = "cl-modal-backdrop";
+  backdrop.setAttribute("style", from.closest(".cl-block")?.getAttribute("style") || "");
+  const photo = Math.min(160, Math.max(24, Number(mm.photo) || 64));
+  backdrop.innerHTML =
+    '<div class="cl-modal" role="dialog" aria-modal="true" aria-labelledby="cl-modal-title" style="--cl-slot-photo:' + photo + 'px">' +
+    '<div class="cl-modal-head"><h2 id="cl-modal-title">' + esc(mm.title || "Choose") + "</h2>" +
+    '<button type="button" class="cl-modal-close" aria-label="Close">&times;</button></div>' +
+    '<input class="cl-modal-search" type="search" placeholder="Search" aria-label="Search products">' +
+    '<div class="cl-modal-list" aria-busy="true"><p class="cl-modal-note">Loading…</p></div></div>';
+  document.body.appendChild(backdrop);
+  const list = backdrop.querySelector<HTMLElement>(".cl-modal-list")!;
+  const search = backdrop.querySelector<HTMLInputElement>(".cl-modal-search")!;
+  let products: PoolProduct[] = [];
+
+  const close = () => {
+    backdrop.remove();
+    document.removeEventListener("keydown", onKey);
+    trigger?.focus?.();
+  };
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key === "Escape") close();
+  };
+  document.addEventListener("keydown", onKey);
+
+  const draw = () => {
+    const q = search.value.trim().toLowerCase();
+    const shown = products.filter((p) => !q || p.title.toLowerCase().includes(q));
+    list.removeAttribute("aria-busy");
+    list.innerHTML = shown.length
+      ? shown
+          .map((p) => {
+            const variants = p.variants.filter((v) => v.available);
+            const first = variants[0];
+            return (
+              '<div class="cl-pick" data-product="' + p.id + '">' +
+              (p.image ? '<img class="cl-pick-img" src="' + esc(p.image) + '" alt="" loading="lazy">' : "") +
+              (mm.names === false ? "" : '<span class="cl-pick-name">' + esc(p.title) + "</span>") +
+              (variants.length > 1
+                ? '<select class="cl-pick-variant" aria-label="' + esc(p.title) + '">' +
+                  variants.map((v) => '<option value="' + v.id + '">' + esc(v.title) + " — " + esc(formatMoney(v.price, moneyFormat)) + "</option>").join("") +
+                  "</select>"
+                : '<span class="cl-pick-price">' + esc(formatMoney(first.price, moneyFormat)) + "</span>") +
+              '<button type="button" class="cl-pick-add">' + esc(mm.button || "Choose") + "</button></div>"
+            );
+          })
+          .join("")
+      : '<p class="cl-modal-note">No products found.</p>';
+  };
+
+  backdrop.addEventListener("click", (e) => {
+    const target = e.target as HTMLElement;
+    if (target === backdrop || target.closest(".cl-modal-close")) return close();
+    const add = target.closest(".cl-pick-add");
+    if (!add) return;
+    const card = add.closest<HTMLElement>(".cl-pick")!;
+    const product = products.find((p) => String(p.id) === card.dataset.product);
+    if (!product) return;
+    const select = card.querySelector<HTMLSelectElement>(".cl-pick-variant");
+    const variant = product.variants.find((v) => String(v.id) === (select ? select.value : "")) || product.variants.find((v) => v.available)!;
+    onPick({
+      productId: product.id,
+      variantId: variant.id,
+      title: product.title + (variant.title && variant.title !== "Default Title" ? " — " + variant.title : ""),
+      image: product.image,
+      price: variant.price,
+    });
+    close();
+  });
+  search.addEventListener("input", draw);
+  search.focus();
+  loadPool(mm).then((loaded) => {
+    products = loaded;
+    draw();
+  });
+}
+
 function mount(container: HTMLElement, deal: SfDeal, data: SfData, form: HTMLFormElement) {
   const rate = Number(shopify()?.currency?.rate) || 1;
   const ctx = { product: data.product, moneyFormat: data.moneyFormat, rate, options: data.options, mf: data.mf };
@@ -202,6 +357,7 @@ function mount(container: HTMLElement, deal: SfDeal, data: SfData, form: HTMLFor
     unitVariants: defaultUnits(arm.bars.find((b) => b.id === firstBar), data.product),
     upsells: {},
     bars: arm.bars,
+    mix: {},
   };
   const api = data.config.api;
   const emit = (name: string, detail: Record<string, unknown>) =>
@@ -230,14 +386,31 @@ function mount(container: HTMLElement, deal: SfDeal, data: SfData, form: HTMLFor
     const items: CartLine[] = [];
     const counts: Record<string, number> = {};
     const rows = pickerRows(deal, bar, data.product);
-    for (let i = 0; i < bar.qty; i++) {
-      const id = String((rows && state.unitVariants[i]) || state.variantId);
-      counts[id] = (counts[id] || 0) + 1;
+    const viewed = String((rows && state.unitVariants[0]) || state.variantId);
+    if (bar.kind === "bundle") {
+      // Every item of the set, tagged for the bundle; the viewed product marked as the main one.
+      const tag = deal.id + ":" + bar.id;
+      for (const it of bar.items || []) {
+        const id = it.v == null ? Number(viewed) : it.v;
+        const own: Record<string, string> = { _cartlift_bundle: tag, _cartlift_arm: arm.key };
+        if (it.v == null) own._cartlift_main = "1";
+        const same = items.find((l) => l.id === id && JSON.stringify(l.properties) === JSON.stringify(own));
+        if (same) same.quantity += it.q;
+        else items.push({ id, quantity: it.q, properties: own });
+      }
+    } else {
+      const slots = mixSlots(deal, bar);
+      for (let i = 0; i < bar.qty; i++) {
+        // Mix & match: the picked product per slot; empty slots take the viewed product.
+        const pick = slots && i > 0 ? state.mix?.[i] : undefined;
+        const id = pick ? String(pick.variantId) : slots ? viewed : String((rows && state.unitVariants[i]) || state.variantId);
+        counts[id] = (counts[id] || 0) + 1;
+      }
+      Object.keys(counts).forEach((id) => {
+        items.push({ id: Number(id), quantity: counts[id], properties: props });
+      });
     }
-    Object.keys(counts).forEach((id) => {
-      items.push({ id: Number(id), quantity: counts[id], properties: props });
-    });
-    if (bar.gift) items.push({ id: bar.gift.id, quantity: 1, properties: { _cartlift_gift: deal.id } });
+    barGifts(bar).forEach((gift) => items.push({ id: gift.id, quantity: 1, properties: { _cartlift_gift: deal.id } }));
     upsellEntries(bar, state, ctx).forEach((up) => {
       if (up.onlyWhenSelected && state.barId !== bar.id) return;
       if (upsellOn(up, state))
@@ -252,13 +425,11 @@ function mount(container: HTMLElement, deal: SfDeal, data: SfData, form: HTMLFor
     if (!bar) return;
     const variantIdQuantities: Record<string, number> = {};
     items
-      .filter((l) => l.properties._cartlift)
+      .filter((l) => l.properties._cartlift || l.properties._cartlift_bundle)
       .forEach((l) => {
         variantIdQuantities[l.id] = (variantIdQuantities[l.id] || 0) + l.quantity;
       });
-    const variant = data.product.variants.find((v) => String(v.id) === String(state.variantId)) || data.product.variants[0];
-    const compare = deal.style?.useCompareAt ? Number(variant.compare_at_price) || 0 : 0;
-    const price = priceBar(bar, Number(variant.price) || 0, compare, rate).total;
+    const price = barTotal(bar);
     const signature = JSON.stringify([bar.id, variantIdQuantities, price]);
     if (signature === lastSignature) return;
     lastSignature = signature;
@@ -270,13 +441,26 @@ function mount(container: HTMLElement, deal: SfDeal, data: SfData, form: HTMLFor
     });
   }
 
+  /** What the selected bar costs, as the widget shows it (cents). */
+  function barTotal(bar: SfBar): number {
+    const variant = data.product.variants.find((v) => String(v.id) === String(state.variantId)) || data.product.variants[0];
+    const unit = Number(variant.price) || 0;
+    if (bar.kind === "bundle") return bundlePrice(bar, unit, rate).total;
+    const slots = mixSlots(deal, bar);
+    const picks = slots ? Array.from({ length: slots - 1 }, (_, i) => state.mix?.[i + 1]) : [];
+    if (picks.length && picks.every(Boolean)) return priceMixed(bar, [unit, ...picks.map((p) => p!.price)], rate).total;
+    const compare = deal.style?.useCompareAt ? Number(variant.compare_at_price) || 0 : 0;
+    return priceBar(bar, unit, compare, rate).total;
+  }
+
   function sync() {
     const bar = selectedBar();
     if (!bar) return;
     let qtys = formControls(form, "quantity");
     if (!qtys.length) qtys = [hiddenInput(form, "quantity")];
+    const quantity = bar.kind === "bundle" ? (bar.items || []).find((it) => it.v == null)?.q || 1 : bar.qty;
     qtys.forEach((q) => {
-      q.value = String(bar.qty);
+      q.value = String(quantity);
     });
     hiddenInput(form, "properties[_cartlift]").value = deal.id;
     hiddenInput(form, "properties[_cartlift_arm]").value = arm.key;
@@ -326,6 +510,17 @@ function mount(container: HTMLElement, deal: SfDeal, data: SfData, form: HTMLFor
     if (swatch) {
       e.preventDefault();
       pickOption(Number(swatch.dataset.unit), Number(swatch.dataset.opt), swatch.dataset.val || "");
+      return;
+    }
+    const slot = target.closest<HTMLElement>("[data-slot]");
+    if (slot && deal.mm) {
+      e.preventDefault();
+      const index = Number(slot.dataset.slot);
+      openChooser(deal.mm, data.moneyFormat, container.querySelector(".cl-block") || container, (pick) => {
+        state.mix = { ...state.mix, [index]: pick };
+        draw();
+        emit("cartlift:variant-selected", { unit: index, variantId: pick.variantId });
+      });
       return;
     }
     if (target.closest("select, input, label.cl-upsell")) return;

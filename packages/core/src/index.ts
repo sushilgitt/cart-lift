@@ -10,4 +10,5 @@ export * from "./money";
 export * from "./text";
 export * from "./pricing";
 export * from "./tiers";
+export * from "./bundles";
 export * from "./cart";

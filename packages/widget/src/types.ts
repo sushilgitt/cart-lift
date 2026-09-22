@@ -29,7 +29,7 @@ export interface SfUpsell {
 
 export interface SfBar {
   id: string;
-  kind: "qty" | "bxgy";
+  kind: "qty" | "bxgy" | "bundle";
   qty: number;
   get: number;
   dt: DiscountType;
@@ -46,8 +46,38 @@ export interface SfBar {
   highlights?: string[];
   /** Default variant ids per unit. */
   dvar?: number[];
-  gift: SfGift | null;
+  /** Free gifts (progressive gifts already resolved). */
+  gifts?: SfGift[];
+  /** Before multiple gifts: one gift. */
+  gift?: SfGift | null;
+  /** Bundle bars: the items; `v: null` is the viewed product. */
+  items?: SfBundleItem[];
   upsells: SfUpsell[];
+}
+
+export interface SfBundleItem {
+  id: string;
+  v: number | null;
+  q: number;
+  dt: DiscountType;
+  dv: number;
+  title?: string;
+  image?: string | null;
+  price?: string | null;
+}
+
+/** Mix & match pool and chooser settings. */
+export interface SfMixMatch {
+  tt: TargetType;
+  p: number[];
+  c: number[];
+  /** Product and collection handles, to list the pool's products. */
+  ph: string[];
+  ch: string[];
+  title: string;
+  button: string;
+  names: boolean;
+  photo: number;
 }
 
 export interface SfVariantStyle {
@@ -67,6 +97,7 @@ export interface SfStyle {
   titleSize?: number;
   imageSize?: number;
   variants?: SfVariantStyle;
+  giftTrack?: boolean;
   colors?: Record<string, string>;
 }
 
@@ -93,6 +124,8 @@ export interface SfDeal {
   mfv?: { name: string; k: string }[];
   style: SfStyle;
   bars: SfBar[];
+  /** Mix & match: shoppers fill the bar's units with products from this pool. */
+  mm?: SfMixMatch;
   /** A/B arms (Phase 3). */
   arms?: SfArm[];
   weightA?: number;
@@ -164,6 +197,17 @@ export interface RenderState {
   bars?: SfBar[];
   /** Complementary products, once fetched. */
   complementary?: SfRecommended[];
+  /** Mix & match: products chosen for units 2.. of the selected bar. */
+  mix?: Record<number, MixPick>;
+}
+
+/** A product a shopper picked for a mix & match slot (price in presentment cents). */
+export interface MixPick {
+  productId: number;
+  variantId: number;
+  title: string;
+  image: string | null;
+  price: number;
 }
 
 export interface RenderCtx {

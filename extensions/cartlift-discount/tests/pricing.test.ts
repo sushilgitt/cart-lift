@@ -14,6 +14,7 @@ type LineSpec = {
   bar?: string;
   gift?: string;
   upsell?: string;
+  bundle?: string;
   collections?: string[];
   /** Search & Discovery complementary product GIDs of this line's product. */
   complementary?: string[];
@@ -33,6 +34,7 @@ function input(config: FnConfig, lines: LineSpec[], rate = 1) {
         bar: l.bar ? { value: l.bar } : null,
         gift: l.gift ? { value: l.gift } : null,
         upsell: l.upsell ? { value: l.upsell } : null,
+        bundle: l.bundle ? { value: l.bundle } : null,
         merchandise: {
           __typename: "ProductVariant",
           id: l.variant ?? `gid://shopify/ProductVariant/${i + 1}`,
@@ -367,5 +369,143 @@ describe("complementary upsells", () => {
       "gid://shopify/CartLine/2",
       "gid://shopify/CartLine/3",
     ]);
+  });
+});
+
+type Cand = { message: string; targets: { cartLine: { id: string; quantity?: number } }[]; value: { percentage?: { value: number }; fixedAmount?: { amount: number } } };
+const line = (n: number) => `gid://shopify/CartLine/${n}`;
+const onLine = (c: Cand[], n: number) => c.filter((x) => x.targets[0].cartLine.id === line(n));
+
+describe("progressive gifts", () => {
+  const config: FnConfig = {
+    deals: [
+      {
+        id: "d1",
+        tt: "ALL",
+        name: "Gifts",
+        bars: [
+          { id: "b1", q: 1, k: "q", dt: "none", dv: 0 },
+          { id: "b2", q: 2, k: "q", dt: "none", dv: 0, gifts: ["gid://shopify/ProductVariant/91"] },
+          { id: "b3", q: 3, k: "q", dt: "none", dv: 0, gifts: ["gid://shopify/ProductVariant/91", "gid://shopify/ProductVariant/92"] },
+        ],
+      },
+    ],
+  };
+  const gift = (v: number) => ({ qty: 1, price: 5, product: `gid://shopify/Product/${v}`, variant: `gid://shopify/ProductVariant/${v}`, gift: "d1" });
+
+  test("every gift of the reached bar is free; the next tier's are not yet", () => {
+    const two = candidates(cartLinesDiscountsGenerateRun(input(config, [{ qty: 2, price: 10 }, gift(91), gift(92)]))) as Cand[];
+    expect(onLine(two, 2)).toHaveLength(1);
+    expect(onLine(two, 3)).toHaveLength(0);
+    const three = candidates(cartLinesDiscountsGenerateRun(input(config, [{ qty: 3, price: 10 }, gift(91), gift(92)]))) as Cand[];
+    expect(onLine(three, 2)).toHaveLength(1);
+    expect(onLine(three, 3)).toHaveLength(1);
+  });
+
+  test("an older config with a single `gift` still works", () => {
+    const old: FnConfig = { deals: [{ id: "d1", tt: "ALL", name: "Old", bars: [{ id: "b1", q: 2, k: "q", dt: "none", dv: 0, gift: "gid://shopify/ProductVariant/91" }] }] };
+    expect(onLine(candidates(cartLinesDiscountsGenerateRun(input(old, [{ qty: 2, price: 10 }, gift(91)]))) as Cand[], 2)).toHaveLength(1);
+  });
+});
+
+describe("complete the bundle", () => {
+  const config: FnConfig = {
+    deals: [
+      {
+        id: "d1",
+        tt: "PRODUCTS",
+        p: ["gid://shopify/Product/1"],
+        name: "Look",
+        bars: [
+          { id: "b1", q: 1, k: "q", dt: "none", dv: 0 },
+          { id: "b2", q: 2, k: "q", dt: "percentage", dv: 10 },
+          {
+            id: "set",
+            q: 3,
+            k: "b",
+            dt: "none",
+            dv: 0,
+            m: "Complete the look",
+            gifts: ["gid://shopify/ProductVariant/99"],
+            it: [
+              { v: null, q: 1, dt: "none", dv: 0 },
+              { v: "gid://shopify/ProductVariant/70", q: 1, dt: "percentage", dv: 25 },
+              { v: "gid://shopify/ProductVariant/80", q: 1, dt: "fixed_total", dv: 5 },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+  const main = (qty = 1) => ({ qty, price: 40, bundle: "d1:set" });
+  const cap = (qty = 1) => ({ qty, price: 20, product: "gid://shopify/Product/7", variant: "gid://shopify/ProductVariant/70", bundle: "d1:set" });
+  const belt = (qty = 1) => ({ qty, price: 15, product: "gid://shopify/Product/8", variant: "gid://shopify/ProductVariant/80", bundle: "d1:set" });
+
+  test("a complete set discounts each item by its own rule", () => {
+    const c = candidates(cartLinesDiscountsGenerateRun(input(config, [main(), cap(), belt()]))) as Cand[];
+    expect(onLine(c, 1)).toHaveLength(0); // main item: no discount
+    expect(onLine(c, 2)).toEqual([{ message: "Complete the look", targets: [{ cartLine: { id: line(2), quantity: 1 } }], value: { percentage: { value: 25 } } }]);
+    // Belt at a fixed $5: $10 off.
+    expect(onLine(c, 3)[0].value).toEqual({ fixedAmount: { amount: 10 } });
+  });
+
+  test("an incomplete set gets nothing", () => {
+    expect(candidates(cartLinesDiscountsGenerateRun(input(config, [main(), cap()])))).toHaveLength(0);
+  });
+
+  test("two sets, with a spare item left at full price", () => {
+    const c = candidates(cartLinesDiscountsGenerateRun(input(config, [main(2), cap(3), belt(2)]))) as Cand[];
+    expect(onLine(c, 2)[0].targets[0].cartLine.quantity).toBe(2);
+    expect(onLine(c, 3)[0].value).toEqual({ fixedAmount: { amount: 20 } });
+  });
+
+  test("the main slot needs a product the deal targets; tags on other products do nothing", () => {
+    const foreignMain = { qty: 1, price: 400, product: "gid://shopify/Product/500", variant: "gid://shopify/ProductVariant/500", bundle: "d1:set" };
+    expect(candidates(cartLinesDiscountsGenerateRun(input(config, [foreignMain, cap(), belt()])))).toHaveLength(0);
+    const fakeItem = { qty: 1, price: 400, product: "gid://shopify/Product/600", variant: "gid://shopify/ProductVariant/600", bundle: "d1:set" };
+    expect(candidates(cartLinesDiscountsGenerateRun(input(config, [main(), fakeItem, belt()])))).toHaveLength(0);
+  });
+
+  test("bundle lines don't also climb the quantity tiers; a complete set unlocks its gift", () => {
+    const gift = { qty: 1, price: 5, product: "gid://shopify/Product/9", variant: "gid://shopify/ProductVariant/99", gift: "d1" };
+    const c = candidates(cartLinesDiscountsGenerateRun(input(config, [main(2), cap(), belt(), gift]))) as Cand[];
+    // 2 × main as bundle lines: no 10% tier discount on line 1.
+    expect(onLine(c, 1)).toHaveLength(0);
+    expect(onLine(c, 4)[0].value).toEqual({ percentage: { value: 100 } });
+  });
+});
+
+describe("mix & match pool", () => {
+  const config: FnConfig = {
+    collectionIds: ["gid://shopify/Collection/5"],
+    deals: [
+      {
+        id: "d1",
+        tt: "PRODUCTS",
+        p: ["gid://shopify/Product/1"],
+        across: true,
+        mm: { tt: "COLLECTIONS", c: ["gid://shopify/Collection/5"] },
+        name: "Mix",
+        bars: [{ id: "b1", q: 3, k: "q", dt: "percentage", dv: 20, m: "Any 3, save 20%" }],
+      },
+    ],
+  };
+
+  test("pool products count toward the tiers together with the deal's products", () => {
+    const lines = [
+      { qty: 1, price: 10, deal: "d1" },
+      { qty: 2, price: 12, product: "gid://shopify/Product/7", variant: "gid://shopify/ProductVariant/70", deal: "d1", collections: ["gid://shopify/Collection/5"] },
+    ];
+    const c = candidates(cartLinesDiscountsGenerateRun(input(config, lines))) as Cand[];
+    expect(c[0].message).toBe("Any 3, save 20%");
+    expect(c[0].targets).toHaveLength(2);
+  });
+
+  test("products outside both don't count", () => {
+    const lines = [
+      { qty: 1, price: 10, deal: "d1" },
+      { qty: 2, price: 12, product: "gid://shopify/Product/7", variant: "gid://shopify/ProductVariant/70", deal: "d1" },
+    ];
+    expect(candidates(cartLinesDiscountsGenerateRun(input(config, lines)))).toHaveLength(0);
   });
 });

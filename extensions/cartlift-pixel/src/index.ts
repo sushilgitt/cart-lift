@@ -3,7 +3,9 @@ import { register, type Checkout } from "@shopify/web-pixels-extension";
 /**
  * Attributes checkouts to CartLift deals.
  *
- * The widget tags deal lines with `_cartlift` (deal id) and `_cartlift_arm`.
+ * The widget tags deal lines with `_cartlift` (deal id) and `_cartlift_arm`;
+ * complete-the-bundle lines with `_cartlift_bundle` (`dealId:barId`), the
+ * viewed product among them with `_cartlift_main`.
  *  - checkout_started: which deals the checkout contains (checkout rate).
  *  - checkout_completed: for each deal, units, revenue after line discounts,
  *    and "added revenue" — what the shopper paid beyond a single unit, the
@@ -22,16 +24,24 @@ register(({ analytics, settings }) => {
     for (const line of checkout.lineItems || []) {
       const props: Record<string, string> = {};
       for (const p of line.properties || []) props[p.key] = p.value;
-      const dealId = props._cartlift || (props._cartlift_gift ?? "") || (props._cartlift_upsell ?? "").split(":")[0];
+      const dealId =
+        props._cartlift ||
+        (props._cartlift_bundle ?? "").split(":")[0] ||
+        (props._cartlift_gift ?? "") ||
+        (props._cartlift_upsell ?? "").split(":")[0];
       if (!dealId) continue;
 
       const agg = (deals[dealId] ||= { d: dealId, a: props._cartlift_arm || "A", units: 0, revenue: 0, single: {} });
       agg.revenue += Number(line.finalLinePrice?.amount ?? 0);
-      if (props._cartlift) {
+      if (props._cartlift || props._cartlift_bundle) {
         agg.units += line.quantity;
-        const productId = line.variant?.product?.id || line.variant?.id || "x";
-        const unit = Number(line.variant?.price?.amount ?? 0);
-        agg.single[productId] = Math.max(agg.single[productId] || 0, unit);
+        // Added revenue is what was paid beyond one unit of each deal product;
+        // for a bundle, beyond one unit of the main product only.
+        if (props._cartlift || props._cartlift_main) {
+          const productId = line.variant?.product?.id || line.variant?.id || "x";
+          const unit = Number(line.variant?.price?.amount ?? 0);
+          agg.single[productId] = Math.max(agg.single[productId] || 0, unit);
+        }
       }
     }
     return Object.values(deals);

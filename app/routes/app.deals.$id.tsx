@@ -10,7 +10,11 @@ import { syncShop } from "../lib/sync.server";
 import {
   BUILT_IN_VARIABLES,
   DISCOUNT_LABELS,
+  TEMPLATES,
   TEMPLATE_INFO,
+  newBundleBar,
+  newBundleItem,
+  templateConfig,
   newBar,
   newUpsell,
   normalizeConfig,
@@ -19,8 +23,11 @@ import {
   type DealConfig,
   type DealStyle,
   type DealTypeKey,
+  type BundleItem,
   type DiscountType,
   type MetafieldVar,
+  type MixMatch,
+  type TemplateKey,
   type ResourceRef,
   type TargetTypeKey,
   type Upsell,
@@ -53,15 +60,20 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
 
   if (params.id === "new") {
     const url = new URL(request.url);
-    const requested = url.searchParams.get("type") as DealTypeKey;
-    const type = TYPES.includes(requested) ? requested : "QUANTITY_BREAK";
+    // ?template=… from the gallery; ?type=… from older links.
+    const byType: Record<DealTypeKey, TemplateKey> = { QUANTITY_BREAK: "quantity_breaks", BXGY: "bxgy", BUNDLE: "mix_match" };
+    const requested = url.searchParams.get("template") as TemplateKey | null;
+    const legacy = url.searchParams.get("type") as DealTypeKey | null;
+    const template: TemplateKey =
+      requested && TEMPLATES[requested]?.available ? requested : legacy && TYPES.includes(legacy) ? byType[legacy] : "quantity_breaks";
+    const type = TEMPLATES[template].type;
     return {
       isNew: true,
       moneyFormat,
       currency: shop?.currencyCode ?? "USD",
       deal: {
         id: "new",
-        name: TEMPLATE_INFO[type].title,
+        name: TEMPLATES[template].title,
         type,
         status: "ACTIVE" as "ACTIVE" | "DRAFT" | "PAUSED",
         targetType: "ALL" as TargetTypeKey,
@@ -69,7 +81,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
         collections: [] as ResourceRef[],
         startsAt: null as string | null,
         endsAt: null as string | null,
-        config: normalizeConfig(null, type),
+        config: templateConfig(template),
       },
     };
   }
@@ -255,7 +267,7 @@ function DealEditor({ data }: { data: LoaderData }) {
     } as any);
     if (!selected) return;
     patch({
-      products: selected.map((p: any) => ({ id: p.id, title: p.title, image: pickedImage(p) })),
+      products: selected.map((p: any) => ({ id: p.id, title: p.title, image: pickedImage(p), handle: p.handle })),
     });
     const price = Number(selected[0]?.variants?.[0]?.price);
     if (price > 0) setPreviewPrice(price);
@@ -268,7 +280,13 @@ function DealEditor({ data }: { data: LoaderData }) {
       selectionIds: deal.collections.map((c) => ({ id: c.id })),
     } as any);
     if (!selected) return;
-    patch({ collections: selected.map((c: any) => ({ id: c.id, title: c.title, image: pickedImage(c) })) });
+    patch({ collections: selected.map((c: any) => ({ id: c.id, title: c.title, image: pickedImage(c), handle: c.handle })) });
+  };
+
+  const pickRefs = async (type: "product" | "collection", current: ResourceRef[]): Promise<ResourceRef[] | null> => {
+    const selected: any = await shopify.resourcePicker({ type, multiple: true, selectionIds: current.map((r) => ({ id: r.id })) } as any);
+    if (!selected) return null;
+    return selected.map((r: any) => ({ id: r.id, title: r.title, image: pickedImage(r), handle: r.handle }));
   };
 
   const pickPreviewProduct = async () => {
@@ -502,7 +520,16 @@ function DealEditor({ data }: { data: LoaderData }) {
             >
               Add buy X get Y bar
             </s-button>
+            <s-button icon="plus" onClick={() => patchConfig({ bars: [...bars, newBundleBar()] })}>
+              Add bundle bar
+            </s-button>
           </s-button-group>
+          <Checkbox
+            label="Progressive gifts"
+            details="Each bar also gets the free gifts of every smaller bar."
+            checked={config.progressiveGifts}
+            onChange={(progressiveGifts) => patchConfig({ progressiveGifts })}
+          />
           <Checkbox
             label="Let customers choose a variant for each item"
             details="Shows a size/colour picker per unit on the selected bar."
@@ -520,6 +547,13 @@ function DealEditor({ data }: { data: LoaderData }) {
 
       {/* ---------------- Metafield variables ---------------- */}
       <MetafieldVarsEditor vars={config.metafieldVars} onChange={(metafieldVars) => patchConfig({ metafieldVars })} />
+
+      {/* ---------------- Mix & match ---------------- */}
+      <MixMatchEditor
+        mm={config.mixMatch}
+        onChange={(changes) => patchConfig({ mixMatch: { ...config.mixMatch, ...changes }, ...(changes.enabled ? { across: true } : {}) })}
+        pickRefs={pickRefs}
+      />
 
       {/* ---------------- Style ---------------- */}
       <StyleEditor style={config.style} onChange={patchStyle} />
@@ -598,13 +632,16 @@ function BarEditor({
   pickVariants: (current: VariantRef[]) => Promise<VariantRef[] | null>;
 }) {
   const bxgy = bar.kind === "bxgy";
+  const bundle = bar.kind === "bundle";
   return (
     <s-box padding="base" border="base" borderRadius="base" background={bar.selected ? "subdued" : undefined}>
       <s-stack gap="base">
         <s-stack direction="inline" justifyContent="space-between" alignItems="center">
           <s-stack direction="inline" gap="small-200" alignItems="center">
             <s-heading>Bar {index + 1}</s-heading>
-            <s-badge tone={bxgy ? "info" : "neutral"}>{bxgy ? "Buy X get Y" : "Quantity break"}</s-badge>
+            <s-badge tone={bxgy ? "info" : bundle ? "success" : "neutral"}>
+              {bxgy ? "Buy X get Y" : bundle ? "Complete the bundle" : "Quantity break"}
+            </s-badge>
             {bar.selected ? <s-badge tone="success">Default</s-badge> : null}
           </s-stack>
           <s-button-group>
@@ -627,8 +664,11 @@ function BarEditor({
           </s-button-group>
         </s-stack>
 
+        {bundle ? (
+          <BundleItemsEditor items={bar.items} onChange={(items) => onChange({ items })} pickVariant={pickVariant} />
+        ) : null}
         <Grid columns={3}>
-          {allowBxgy || bxgy ? (
+          {bundle ? null : allowBxgy || bxgy ? (
             <Select
               label="Bar type"
               value={bar.kind}
@@ -645,7 +685,7 @@ function BarEditor({
               ]}
             />
           ) : null}
-          {bxgy ? (
+          {bundle ? null : bxgy ? (
             <>
               <NumberField
                 label="Buy"
@@ -666,6 +706,7 @@ function BarEditor({
           ) : (
             <NumberField label="Quantity" min={1} value={bar.qty} onChange={(qty) => onChange({ qty: Math.max(1, Math.floor(qty)) })} />
           )}
+          {bundle ? null : (
           <Select
             label={bxgy ? "Discount on the free items" : "Discount"}
             value={bar.discountType}
@@ -680,7 +721,8 @@ function BarEditor({
                 : DISCOUNT_OPTIONS
             }
           />
-          {bar.discountType !== "none" ? (
+          )}
+          {!bundle && bar.discountType !== "none" ? (
             <NumberField
               label={bar.discountType === "percentage" ? "Percent" : "Amount"}
               min={0}
@@ -751,31 +793,35 @@ function BarEditor({
           ) : null}
         </s-stack>
 
-        {/* Free gift */}
+        {/* Free gifts */}
         <s-stack gap="small-200">
-          <s-text type="strong">Free gift</s-text>
-          {bar.gift ? (
-            <>
-              <s-stack direction="inline" gap="small-200" alignItems="center">
-                <s-thumbnail src={bar.gift.image ?? undefined} alt={bar.gift.title} size="small" />
-                <s-text>{bar.gift.title}</s-text>
-                <s-button variant="tertiary" icon="x" accessibilityLabel="Remove gift" onClick={() => onChange({ gift: null })} />
-              </s-stack>
-              <TextField label="Gift text" value={bar.giftText} onChange={(giftText) => onChange({ giftText })} />
-            </>
-          ) : (
+          <s-text type="strong">Free gifts</s-text>
+          {bar.gifts.map((gift) => (
+            <s-stack key={gift.id} direction="inline" gap="small-200" alignItems="center">
+              <s-thumbnail src={gift.image ?? undefined} alt={gift.title} size="small" />
+              <s-text>{gift.title}</s-text>
+              <s-button
+                variant="tertiary"
+                icon="x"
+                accessibilityLabel={`Remove ${gift.title}`}
+                onClick={() => onChange({ gifts: bar.gifts.filter((g) => g.id !== gift.id) })}
+              />
+            </s-stack>
+          ))}
+          {bar.gifts.length ? <TextField label="Gift text" value={bar.giftText} onChange={(giftText) => onChange({ giftText })} /> : null}
+          {bar.gifts.length < 5 ? (
             <div>
               <s-button
                 icon="gift-card"
                 onClick={async () => {
                   const gift = await pickVariant();
-                  if (gift) onChange({ gift });
+                  if (gift && !bar.gifts.some((g) => g.id === gift.id)) onChange({ gifts: [...bar.gifts, gift] });
                 }}
               >
                 Add free gift
               </s-button>
             </div>
-          )}
+          ) : null}
         </s-stack>
 
         {/* Upsells */}
@@ -1035,6 +1081,158 @@ function MetafieldVarsEditor({ vars, onChange }: { vars: MetafieldVar[]; onChang
   );
 }
 
+function BundleItemsEditor({
+  items,
+  onChange,
+  pickVariant,
+}: {
+  items: BundleItem[];
+  onChange: (items: BundleItem[]) => void;
+  pickVariant: () => Promise<VariantRef | null>;
+}) {
+  const set = (id: string, changes: Partial<BundleItem>) => onChange(items.map((it) => (it.id === id ? { ...it, ...changes } : it)));
+  return (
+    <s-stack gap="small-200">
+      <s-text type="strong">Items in the bundle</s-text>
+      <s-paragraph color="subdued">The product being viewed plus the items you pick, each with its own discount. Checkout discounts complete sets only.</s-paragraph>
+      {items.map((it) => (
+        <s-box key={it.id} padding="small" border="base" borderRadius="base">
+          <s-stack gap="small-200">
+            <s-stack direction="inline" gap="small-200" alignItems="center" justifyContent="space-between">
+              {it.variant ? (
+                <s-stack direction="inline" gap="small-200" alignItems="center">
+                  <s-thumbnail src={it.variant.image ?? undefined} alt={it.variant.title} size="small" />
+                  <s-text>{it.variant.title}</s-text>
+                </s-stack>
+              ) : (
+                <s-text type="strong">{items.indexOf(it) === 0 ? "The product being viewed" : "Pick a product"}</s-text>
+              )}
+              <s-button-group>
+                {items.indexOf(it) === 0 ? null : (
+                  <s-button
+                    variant="tertiary"
+                    onClick={async () => {
+                      const variant = await pickVariant();
+                      if (variant) set(it.id, { variant });
+                    }}
+                  >
+                    {it.variant ? "Change" : "Pick product"}
+                  </s-button>
+                )}
+                {items.indexOf(it) === 0 ? null : (
+                  <s-button
+                    variant="tertiary"
+                    tone="critical"
+                    icon="delete"
+                    accessibilityLabel="Remove item"
+                    onClick={() => onChange(items.filter((x) => x.id !== it.id))}
+                  />
+                )}
+              </s-button-group>
+            </s-stack>
+            <Grid columns={3}>
+              <NumberField label="Quantity" min={1} max={20} value={it.qty} onChange={(qty) => set(it.id, { qty: Math.max(1, Math.floor(qty)) })} />
+              <Select
+                label="Discount"
+                value={it.discountType}
+                onChange={(dt) => set(it.id, { discountType: dt as DiscountType })}
+                options={[
+                  { value: "none", label: "No discount" },
+                  { value: "percentage", label: "Percentage off" },
+                  { value: "amount", label: "Amount off each" },
+                  { value: "fixed_total", label: "Fixed price each" },
+                ]}
+              />
+              {it.discountType !== "none" ? (
+                <NumberField
+                  label={it.discountType === "percentage" ? "Percent" : "Amount"}
+                  min={0}
+                  max={it.discountType === "percentage" ? 100 : undefined}
+                  value={it.discountValue}
+                  onChange={(discountValue) => set(it.id, { discountValue: Math.max(0, discountValue) })}
+                />
+              ) : null}
+            </Grid>
+          </s-stack>
+        </s-box>
+      ))}
+      {items.length < 6 ? (
+        <div>
+          <s-button icon="plus" onClick={() => onChange([...items, newBundleItem({ discountType: "percentage", discountValue: 10 })])}>
+            Add item
+          </s-button>
+        </div>
+      ) : null}
+    </s-stack>
+  );
+}
+
+function MixMatchEditor({
+  mm,
+  onChange,
+  pickRefs,
+}: {
+  mm: MixMatch;
+  onChange: (changes: Partial<MixMatch>) => void;
+  pickRefs: (type: "product" | "collection", current: ResourceRef[]) => Promise<ResourceRef[] | null>;
+}) {
+  return (
+    <s-section heading="Mix & match">
+      <s-stack gap="base">
+        <Checkbox
+          label="Let shoppers fill a bar with different products"
+          details="Each unit after the first gets a “choose” button that opens a product picker."
+          checked={mm.enabled}
+          onChange={(enabled) => onChange({ enabled })}
+        />
+        {mm.enabled ? (
+          <>
+            <Select
+              label="Products shoppers can choose"
+              value={mm.pool}
+              onChange={(pool) => onChange({ pool: pool as MixMatch["pool"] })}
+              options={[
+                { value: "visibility", label: "Same products as the deal's visibility" },
+                { value: "products", label: "Selected products" },
+                { value: "collections", label: "Products in selected collections" },
+                { value: "except", label: "All products except selected" },
+              ]}
+            />
+            {mm.pool === "products" || mm.pool === "except" ? (
+              <ResourceList
+                items={mm.products}
+                label="products"
+                onPick={async () => {
+                  const products = await pickRefs("product", mm.products);
+                  if (products) onChange({ products });
+                }}
+                onRemove={(id) => onChange({ products: mm.products.filter((p) => p.id !== id) })}
+              />
+            ) : null}
+            {mm.pool === "collections" ? (
+              <ResourceList
+                items={mm.collections}
+                label="collections"
+                onPick={async () => {
+                  const collections = await pickRefs("collection", mm.collections);
+                  if (collections) onChange({ collections });
+                }}
+                onRemove={(id) => onChange({ collections: mm.collections.filter((c) => c.id !== id) })}
+              />
+            ) : null}
+            <Grid>
+              <TextField label="Picker title" value={mm.modalTitle} onChange={(modalTitle) => onChange({ modalTitle })} />
+              <TextField label="Button text" value={mm.buttonText} onChange={(buttonText) => onChange({ buttonText })} />
+              <NumberField label="Product photo size" min={32} max={160} suffix="px" value={mm.photoSize} onChange={(photoSize) => onChange({ photoSize })} />
+            </Grid>
+            <Checkbox label="Show product names" checked={mm.showNames} onChange={(showNames) => onChange({ showNames })} />
+          </>
+        ) : null}
+      </s-stack>
+    </s-section>
+  );
+}
+
 const COLOR_FIELDS: [keyof DealStyle["colors"], string][] = [
   ["accent", "Accent (radio, checkbox)"],
   ["barBg", "Bar background"],
@@ -1079,6 +1277,12 @@ function StyleEditor({ style, onChange }: { style: DealStyle; onChange: (changes
               label="Use product compare-at price as the full price"
               checked={style.useCompareAt}
               onChange={(useCompareAt) => onChange({ useCompareAt })}
+            />
+            <Checkbox
+              label="Show the gift track"
+              details="Every gift tier above the bars, unlocked as bigger bars are chosen."
+              checked={style.giftTrack}
+              onChange={(giftTrack) => onChange({ giftTrack })}
             />
           </s-stack>
         </Grid>
