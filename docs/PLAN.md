@@ -43,6 +43,9 @@ Fixed amounts are stored in shop currency and converted with
 
 ## Phases
 
+> Superseded by the parity audit and phase plan in [`PARITY.md`](PARITY.md)
+> (2026-09-22). The list below is the original build plan, kept for history.
+
 ### Phase 1 — MVP (quantity breaks end to end)
 - [x] Template, Postgres, app link, extensions scaffolded
 - [ ] Shop provisioning, compliance + uninstall webhooks
