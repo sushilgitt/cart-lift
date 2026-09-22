@@ -487,7 +487,8 @@ function normalizeItems(v: unknown): BundleItem[] {
   );
 }
 
-const ARM_FIELDS = ["bars", "style", "discountName", "variantPerUnit", "showVariantPicker", "progressiveGifts"] as const;
+/** Fields an A/B variant may change. */
+export const ARM_FIELDS = ["bars", "style", "discountName", "variantPerUnit", "showVariantPicker", "progressiveGifts"] as const;
 
 function normalizeAbTest(raw: unknown, type: DealTypeKey): AbTest {
   const t = (raw ?? {}) as Partial<AbTest>;

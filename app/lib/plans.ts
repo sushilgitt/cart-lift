@@ -34,7 +34,7 @@ export const PLANS: PlanDefinition[] = [
     name: "Starter",
     price: 14.99,
     limit: 1_000,
-    features: ["Everything in Free", "Up to $1,000 added revenue / month", "Chat support"],
+    features: ["Everything in Free", "Up to $1,000 added revenue / month", "A/B testing", "Chat support"],
   },
   {
     id: "SCALE",

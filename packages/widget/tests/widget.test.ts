@@ -55,6 +55,7 @@ function productPage(
     inForm = "",
     recommendations = [] as Json[],
     store = {} as Record<string, Json>,
+    storage = {} as Record<string, string>,
   } = {},
 ) {
   const window = new Window({ url: "https://shop.test/products/tee" });
@@ -75,6 +76,7 @@ function productPage(
     alert: () => {},
   });
   (window.navigator as unknown as { sendBeacon: () => boolean }).sendBeacon = () => true;
+  for (const [k, v] of Object.entries(storage)) window.localStorage.setItem(k, v);
   document.body.innerHTML = `
     <section class="shopify-section">
       <form action="/cart/add" class="product-form">
@@ -456,5 +458,27 @@ describe("Phase 2: mix & match", () => {
     const view = page.document.defaultView as unknown as { KeyboardEvent: typeof KeyboardEvent };
     page.document.dispatchEvent(new view.KeyboardEvent("keydown", { key: "Escape" }) as never);
     expect(page.$(".cl-modal")).toBeNull();
+  });
+});
+
+describe("Phase 3: A/B arms and tracking", () => {
+  const abDeal = deal([bar({ id: "a1" }), bar({ id: "a2", qty: 2, dt: "percentage", dv: 10, selected: true })], {
+    weightA: 50,
+    arms: [{ key: "B", weight: 50, bars: [bar({ id: "b3", qty: 3, dt: "percentage", dv: 20, selected: true, title: "Three" })], style: { layout: "grid" } }],
+  });
+
+  test("a visitor in arm B sees B's bars and style, and lines carry the arm", () => {
+    const page = productPage(abDeal, { storage: { cartlift_arm_d1: "B" } });
+    expect([...page.document.querySelectorAll(".cl-bar")].map((b) => b.getAttribute("data-bar"))).toEqual(["b3"]);
+    expect(page.$(".cl-block")?.className).toContain("cl-layout-grid");
+    expect(page.input("properties[_cartlift_arm]")).toBe("B");
+    expect(page.input("quantity")).toBe("3");
+  });
+
+  test("arm A keeps the deal; the seen deal is remembered with its arm", () => {
+    const page = productPage(abDeal, { storage: { cartlift_arm_d1: "A" } });
+    expect([...page.document.querySelectorAll(".cl-bar")].map((b) => b.getAttribute("data-bar"))).toEqual(["a1", "a2"]);
+    const seen = JSON.parse((page.document.defaultView as unknown as { localStorage: Storage }).localStorage.getItem("cartlift_seen") || "{}");
+    expect(seen).toEqual({ d1: "A" });
   });
 });

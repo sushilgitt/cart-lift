@@ -7,8 +7,12 @@ import prisma from "../db.server";
 import { authenticate } from "../shopify.server";
 import { getDeal, nextPriority, parseDealInput, shopIdFor } from "../lib/deal.server";
 import { syncShop } from "../lib/sync.server";
+import { abResult, MIN_ORDERS_PER_ARM } from "../../packages/core/src";
 import {
+  ARM_FIELDS,
+  ARM_KEYS,
   BUILT_IN_VARIABLES,
+  armConfig,
   DISCOUNT_LABELS,
   TEMPLATES,
   TEMPLATE_INFO,
@@ -23,6 +27,8 @@ import {
   type DealConfig,
   type DealStyle,
   type DealTypeKey,
+  type ArmKey,
+  type ArmOverride,
   type BundleItem,
   type DiscountType,
   type MetafieldVar,
@@ -68,6 +74,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       requested && TEMPLATES[requested]?.available ? requested : legacy && TYPES.includes(legacy) ? byType[legacy] : "quantity_breaks";
     const type = TEMPLATES[template].type;
     return {
+      ab: null,
       isNew: true,
       moneyFormat,
       currency: shop?.currencyCode ?? "USD",
@@ -88,7 +95,30 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
 
   const deal = await getDeal(session.shop, params.id!);
   if (!deal) throw new Response("Deal not found", { status: 404 });
+  const config = normalizeConfig(deal.config, deal.type as DealTypeKey);
+
+  // A/B results since the test started (to its end, if it ended).
+  let ab: ReturnType<typeof abResult> | null = null;
+  const test = config.abTest;
+  if (test.status !== "off" && test.startedAt) {
+    const since = new Date(test.startedAt.slice(0, 10) + "T00:00:00Z");
+    const until = test.endedAt ? new Date(new Date(test.endedAt).getTime() + 86_400_000) : new Date(Date.now() + 86_400_000);
+    const rows = await prisma.dailyStat.groupBy({
+      by: ["arm"],
+      where: { dealId: deal.id, day: { gte: since, lt: until } },
+      _sum: { views: true, orders: true },
+    });
+    const keys = ["A", ...Object.keys(test.arms)];
+    ab = abResult(
+      keys.map((key) => {
+        const row = rows.find((r) => r.arm === key);
+        return { key, visitors: row?._sum.views ?? 0, orders: row?._sum.orders ?? 0 };
+      }),
+    );
+  }
+
   return {
+    ab,
     isNew: false,
     moneyFormat,
     currency: shop?.currencyCode ?? "USD",
@@ -102,7 +132,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       collections: (deal.collections ?? []) as unknown as ResourceRef[],
       startsAt: deal.startsAt?.toISOString() ?? null,
       endsAt: deal.endsAt?.toISOString() ?? null,
-      config: normalizeConfig(deal.config, deal.type as DealTypeKey),
+      config,
     },
   };
 };
@@ -229,31 +259,50 @@ function DealEditor({ data }: { data: LoaderData }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // A/B: which variant the bars, style and picker options below edit.
+  const [armKey, setArmKey] = useState<ArmKey>("A");
   const patch = useCallback((changes: Partial<EditorDeal>) => setDeal((d) => ({ ...d, ...changes })), []);
+  /** Changes the deal, or — for fields a variant can change — the variant being edited. */
   const patchConfig = useCallback(
-    (changes: Partial<DealConfig>) => setDeal((d) => ({ ...d, config: { ...d.config, ...changes } })),
-    [],
+    (changes: Partial<DealConfig>) =>
+      setDeal((d) => {
+        if (armKey === "A") return { ...d, config: { ...d.config, ...changes } };
+        const own: ArmOverride = {};
+        const shared: Partial<DealConfig> = {};
+        for (const [k, v] of Object.entries(changes)) {
+          if ((ARM_FIELDS as readonly string[]).includes(k)) (own as Record<string, unknown>)[k] = v;
+          else (shared as Record<string, unknown>)[k] = v;
+        }
+        const arms = { ...d.config.abTest.arms, [armKey]: { ...d.config.abTest.arms[armKey as "B"], ...own } };
+        return { ...d, config: { ...d.config, ...shared, abTest: { ...d.config.abTest, arms } } };
+      }),
+    [armKey],
   );
+  const viewOf = useCallback((c: DealConfig) => (armKey === "A" ? c : armConfig(c, armKey)), [armKey]);
   const patchStyle = useCallback(
     (changes: Partial<DealStyle>) =>
-      setDeal((d) => ({ ...d, config: { ...d.config, style: { ...d.config.style, ...changes } } })),
-    [],
+      setDeal((d) => {
+        const style = { ...viewOf(d.config).style, ...changes };
+        if (armKey === "A") return { ...d, config: { ...d.config, style } };
+        const arms = { ...d.config.abTest.arms, [armKey]: { ...d.config.abTest.arms[armKey as "B"], style } };
+        return { ...d, config: { ...d.config, abTest: { ...d.config.abTest, arms } } };
+      }),
+    [armKey, viewOf],
   );
   const patchBar = useCallback(
     (id: string, changes: Partial<Bar>) =>
-      setDeal((d) => ({
-        ...d,
-        config: {
-          ...d.config,
-          bars: d.config.bars.map((b) => {
-            if (b.id === id) return { ...b, ...changes };
-            // Only one bar can be the default.
-            if (changes.selected) return { ...b, selected: false };
-            return b;
-          }),
-        },
-      })),
-    [],
+      setDeal((d) => {
+        const bars = viewOf(d.config).bars.map((b) => {
+          if (b.id === id) return { ...b, ...changes };
+          // Only one bar can be the default.
+          if (changes.selected) return { ...b, selected: false };
+          return b;
+        });
+        if (armKey === "A") return { ...d, config: { ...d.config, bars } };
+        const arms = { ...d.config.abTest.arms, [armKey]: { ...d.config.abTest.arms[armKey as "B"], bars } };
+        return { ...d, config: { ...d.config, abTest: { ...d.config.abTest, arms } } };
+      }),
+    [armKey, viewOf],
   );
 
   const save = () => fetcher.submit({ intent: "save", deal } as any, { method: "post", encType: "application/json" });
@@ -326,7 +375,11 @@ function DealEditor({ data }: { data: LoaderData }) {
     };
   };
 
-  const previewDeal = useMemo(() => storefrontDeal(deal) as any, [deal]);
+  // The preview shows the variant being edited.
+  const previewDeal = useMemo(
+    () => storefrontDeal({ ...deal, config: armKey === "A" ? deal.config : armConfig(deal.config, armKey) }) as any,
+    [deal, armKey],
+  );
   const previewCtx = useMemo(() => {
     if (previewProduct) return { product: previewProduct.product, options: previewProduct.options, moneyFormat, rate: 1 };
     const cents = Math.round(previewPrice * 100);
@@ -347,7 +400,9 @@ function DealEditor({ data }: { data: LoaderData }) {
   const errors = result && !result.ok ? result.errors : [];
   const isBxgy = deal.type === "BXGY";
   const { config } = deal;
-  const bars = config.bars;
+  // What the variant being edited shows (the deal itself for A).
+  const view = armKey === "A" ? config : armConfig(config, armKey);
+  const bars = view.bars;
 
   const moveBar = (index: number, dir: -1 | 1) => {
     const next = [...bars];
@@ -410,12 +465,43 @@ function DealEditor({ data }: { data: LoaderData }) {
           </Grid>
           <TextField
             label="Discount name in cart and checkout"
-            value={config.discountName}
+            value={view.discountName}
             onChange={(discountName) => patchConfig({ discountName })}
             placeholder="Leave empty to use each bar's title"
           />
         </s-stack>
       </s-section>
+
+      {/* ---------------- A/B test ---------------- */}
+      {!isNew ? (
+        <AbTestPanel
+          test={config.abTest}
+          results={data.ab}
+          editing={armKey}
+          onEdit={setArmKey}
+          snapshot={() => {
+            const copy: ArmOverride = {};
+            for (const field of ARM_FIELDS) (copy as Record<string, unknown>)[field] = JSON.parse(JSON.stringify(config[field]));
+            return copy;
+          }}
+          onChange={(abTest) => setDeal((d) => ({ ...d, config: { ...d.config, abTest } }))}
+          onApply={(key) => {
+            const override = config.abTest.arms[key as "B"] ?? {};
+            setDeal((d) => ({
+              ...d,
+              config: { ...d.config, ...override, abTest: { status: "off", weights: { A: 100 }, arms: {}, startedAt: null, endedAt: null } },
+            }));
+            setArmKey("A");
+            shopify.toast.show(`Variant ${key} is now the deal. Save to publish.`);
+          }}
+        />
+      ) : null}
+      {armKey !== "A" ? (
+        <s-banner tone="info" heading={`Editing variant ${armKey}`}>
+          Bars, style, variant pickers and the discount name below belong to variant {armKey}. Visibility, schedule and mix &amp;
+          match are shared by every variant.
+        </s-banner>
+      ) : null}
 
       {/* ---------------- Visibility ---------------- */}
       <s-section heading="Visibility">
@@ -527,19 +613,19 @@ function DealEditor({ data }: { data: LoaderData }) {
           <Checkbox
             label="Progressive gifts"
             details="Each bar also gets the free gifts of every smaller bar."
-            checked={config.progressiveGifts}
+            checked={view.progressiveGifts}
             onChange={(progressiveGifts) => patchConfig({ progressiveGifts })}
           />
           <Checkbox
             label="Let customers choose a variant for each item"
             details="Shows a size/colour picker per unit on the selected bar."
-            checked={config.variantPerUnit}
+            checked={view.variantPerUnit}
             onChange={(variantPerUnit) => patchConfig({ variantPerUnit })}
           />
           <Checkbox
             label="Show the variant picker on single-item bars"
             details="Off: shoppers use your theme's variant picker for one item."
-            checked={config.showVariantPicker}
+            checked={view.showVariantPicker}
             onChange={(showVariantPicker) => patchConfig({ showVariantPicker })}
           />
         </s-stack>
@@ -556,7 +642,7 @@ function DealEditor({ data }: { data: LoaderData }) {
       />
 
       {/* ---------------- Style ---------------- */}
-      <StyleEditor style={config.style} onChange={patchStyle} />
+      <StyleEditor style={view.style} onChange={patchStyle} />
 
       {/* ---------------- Preview ---------------- */}
       <s-section slot="aside" heading="Live preview">
@@ -1227,6 +1313,181 @@ function MixMatchEditor({
             </Grid>
             <Checkbox label="Show product names" checked={mm.showNames} onChange={(showNames) => onChange({ showNames })} />
           </>
+        ) : null}
+      </s-stack>
+    </s-section>
+  );
+}
+
+type AbResults = LoaderData["ab"];
+
+function AbTestPanel({
+  test,
+  results,
+  editing,
+  onEdit,
+  onChange,
+  onApply,
+  snapshot,
+}: {
+  test: DealConfig["abTest"];
+  results: AbResults;
+  editing: ArmKey;
+  onEdit: (key: ArmKey) => void;
+  /** Variant A's fields, copied: a new variant starts as the deal is now. */
+  snapshot: () => ArmOverride;
+  onChange: (test: DealConfig["abTest"]) => void;
+  onApply: (key: ArmKey) => void;
+}) {
+  const keys: ArmKey[] = ["A", ...(Object.keys(test.arms) as ArmKey[])];
+  const next = ARM_KEYS.find((k) => !keys.includes(k));
+  const even = (list: ArmKey[]) => {
+    const share = Math.floor(100 / list.length);
+    return Object.fromEntries(list.map((k, i) => [k, i === 0 ? 100 - share * (list.length - 1) : share]));
+  };
+  const total = keys.reduce((sum, k) => sum + (test.weights[k] ?? 0), 0);
+  const running = test.status === "running";
+  const pct = (n: number) => `${(n * 100).toFixed(2)}%`;
+
+  return (
+    <s-section heading="A/B test">
+      <s-stack gap="base">
+        <s-stack direction="inline" gap="small-200" alignItems="center">
+          <s-badge tone={running ? "success" : test.status === "ended" ? "info" : "neutral"}>
+            {running ? "Running" : test.status === "ended" ? "Ended" : "Not running"}
+          </s-badge>
+          <s-text color="subdued">
+            Test up to four variants of this deal — bars, prices, style, text. Visitors keep their variant. A winner needs at least{" "}
+            {MIN_ORDERS_PER_ARM} orders per variant and a significant difference in conversion rate.
+          </s-text>
+        </s-stack>
+
+        {keys.length > 1 ? (
+          <s-stack direction="inline" gap="small-200">
+            {keys.map((k) => (
+              <s-button key={k} variant={editing === k ? "primary" : "secondary"} onClick={() => onEdit(k)}>
+                {`Edit ${k}`}
+              </s-button>
+            ))}
+          </s-stack>
+        ) : null}
+
+        {keys.length > 1 ? (
+          <s-stack gap="small-200">
+            <s-text type="strong">Traffic split</s-text>
+            <Grid columns={4}>
+              {keys.map((k) => (
+                <NumberField
+                  key={k}
+                  label={`Variant ${k}`}
+                  min={0}
+                  max={100}
+                  suffix="%"
+                  value={test.weights[k] ?? 0}
+                  onChange={(w) => onChange({ ...test, weights: { ...test.weights, [k]: Math.max(0, Math.min(100, Math.round(w))) } })}
+                />
+              ))}
+            </Grid>
+            {total !== 100 ? <s-text tone="critical">{`The split adds up to ${total}%; it must be 100%.`}</s-text> : null}
+          </s-stack>
+        ) : null}
+
+        <s-button-group>
+          {next && !running ? (
+            <s-button
+              icon="plus"
+              onClick={() => {
+                // A new variant starts as a copy of the deal as it is now.
+                const list = [...keys, next];
+                onChange({ ...test, arms: { ...test.arms, [next]: snapshot() }, weights: even(list) });
+                onEdit(next);
+              }}
+            >
+              {`Add variant ${next}`}
+            </s-button>
+          ) : null}
+          {keys.length > 1 && !running ? (
+            <s-button onClick={() => onChange({ ...test, weights: even(keys) })}>Split evenly</s-button>
+          ) : null}
+          {keys.length > 1 && !running ? (
+            <s-button
+              variant="primary"
+              onClick={() => onChange({ ...test, status: "running", startedAt: new Date().toISOString(), endedAt: null })}
+            >
+              Start test
+            </s-button>
+          ) : null}
+          {running ? (
+            <s-button tone="critical" onClick={() => onChange({ ...test, status: "ended", endedAt: new Date().toISOString() })}>
+              End test
+            </s-button>
+          ) : null}
+          {editing !== "A" && !running ? (
+            <s-button
+              tone="critical"
+              variant="tertiary"
+              onClick={() => {
+                const arms = { ...test.arms };
+                delete arms[editing as "B"];
+                const list = keys.filter((k) => k !== editing);
+                onChange({ ...test, arms, weights: even(list), status: list.length > 1 ? test.status : "off" });
+                onEdit("A");
+              }}
+            >
+              {`Remove variant ${editing}`}
+            </s-button>
+          ) : null}
+        </s-button-group>
+        <s-text color="subdued">Changes to the test take effect when you save.</s-text>
+
+        {results ? (
+          <s-stack gap="small-200">
+            <s-text type="strong">
+              {results.status === "winner"
+                ? `Variant ${results.winner} is the winner.`
+                : results.status === "no_clear_winner"
+                  ? "No clear winner yet: the difference isn't significant."
+                  : `Collecting data: every variant needs ${MIN_ORDERS_PER_ARM} orders.`}
+            </s-text>
+            <s-table>
+              <s-table-header-row>
+                <s-table-header listSlot="primary">Variant</s-table-header>
+                <s-table-header format="numeric">Visitors</s-table-header>
+                <s-table-header format="numeric">Orders</s-table-header>
+                <s-table-header format="numeric">Conversion</s-table-header>
+                <s-table-header format="numeric">Lift vs A</s-table-header>
+                <s-table-header format="numeric">p-value</s-table-header>
+                <s-table-header>Action</s-table-header>
+              </s-table-header-row>
+              <s-table-body>
+                {results.arms.map((r) => (
+                  <s-table-row key={r.key}>
+                    <s-table-cell>
+                      {r.key}
+                      {results.winner === r.key ? " — winner" : ""}
+                    </s-table-cell>
+                    <s-table-cell>{r.visitors}</s-table-cell>
+                    <s-table-cell>{r.orders}</s-table-cell>
+                    <s-table-cell>{pct(r.conversion)}</s-table-cell>
+                    <s-table-cell>{r.lift == null ? "—" : `${r.lift >= 0 ? "+" : "−"}${Math.abs(r.lift * 100).toFixed(1)}%`}</s-table-cell>
+                    <s-table-cell>{r.key === "A" ? "—" : r.p.toFixed(3)}</s-table-cell>
+                    <s-table-cell>
+                      {r.key !== "A" && test.arms[r.key as "B"] ? (
+                        <s-button
+                          variant={results.winner === r.key ? "primary" : "tertiary"}
+                          onClick={() => {
+                            if (confirm(`Make variant ${r.key} the deal and end the test?`)) onApply(r.key as ArmKey);
+                          }}
+                        >
+                          {results.winner === r.key ? "Apply winner" : "Apply"}
+                        </s-button>
+                      ) : null}
+                    </s-table-cell>
+                  </s-table-row>
+                ))}
+              </s-table-body>
+            </s-table>
+          </s-stack>
         ) : null}
       </s-stack>
     </s-section>

@@ -4,7 +4,9 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { embedDeepLink, embedStatus } from "../lib/theme.server";
-import { dealAnalytics, rangeFromParam, rates } from "../lib/analytics.server";
+import { last30 } from "../lib/analytics.server";
+import { change } from "../../packages/core/src";
+import { formatChange } from "../lib/metric-defs";
 import { monthlyUsage } from "../lib/billing.server";
 import { planById } from "../lib/plans";
 import { formatMoney } from "../lib/deals";
@@ -17,8 +19,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   });
   const activeDeals = await prisma.deal.count({ where: { shopId: shop.id, status: "ACTIVE" } });
   const embed = await embedStatus(admin);
-  const { from, to } = rangeFromParam("30");
-  const { total } = await dealAnalytics(session.shop, from, to);
+  const { total, metrics, prevMetrics } = await last30(session.shop, shop.timezone);
   const usage = await monthlyUsage(shop.id);
   const plan = planById(shop.plan);
 
@@ -30,7 +31,16 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     dealCount: shop._count.deals,
     activeDeals,
     total,
-    rates: rates(total),
+    rates: metrics,
+    // Change vs the 30 days before, per tile.
+    changes: {
+      revenue: formatChange(change(metrics.revenue, prevMetrics.revenue)),
+      addedRevenue: formatChange(change(metrics.addedRevenue, prevMetrics.addedRevenue)),
+      orders: formatChange(change(metrics.bundleOrders, prevMetrics.bundleOrders)),
+      views: formatChange(change(metrics.visitors, prevMetrics.visitors)),
+      conversion: formatChange(change(metrics.conversion, prevMetrics.conversion)),
+      aov: formatChange(change(metrics.aov, prevMetrics.aov)),
+    },
     moneyFormat: (shop.moneyFormat || "${{amount}}").replace(/<[^>]*>/g, ""),
     usage,
     plan: { name: plan.name, limit: plan.limit },
@@ -86,12 +96,12 @@ export default function Dashboard() {
 
       <s-section heading="Last 30 days">
         <s-grid gridTemplateColumns="repeat(auto-fit, minmax(160px, 1fr))" gap="base">
-          <Stat label="Deal revenue" value={money(d.total.revenue)} />
-          <Stat label="Added revenue" value={money(d.total.addedRevenue)} hint="Paid beyond a single unit" />
-          <Stat label="Deal orders" value={String(d.total.orders)} />
-          <Stat label="Visitors who saw a deal" value={String(d.total.views)} />
-          <Stat label="Conversion rate" value={`${(d.rates.conversion * 100).toFixed(1)}%`} />
-          <Stat label="Average order value" value={money(d.rates.aov)} />
+          <Stat label="Deal revenue" value={money(d.total.revenue)} hint={`${d.changes.revenue} vs previous 30 days`} />
+          <Stat label="Added revenue" value={money(d.total.addedRevenue)} hint={`${d.changes.addedRevenue} · paid beyond a single unit`} />
+          <Stat label="Deal orders" value={String(d.total.orders)} hint={`${d.changes.orders} vs previous 30 days`} />
+          <Stat label="Visitors who saw a deal" value={String(d.total.views)} hint={`${d.changes.views} vs previous 30 days`} />
+          <Stat label="Conversion rate" value={`${(d.rates.conversion * 100).toFixed(1)}%`} hint={`${d.changes.conversion} vs previous 30 days`} />
+          <Stat label="Average order value" value={money(d.rates.aov)} hint={`${d.changes.aov} vs previous 30 days`} />
           <Stat label="Units per order" value={d.rates.unitsPerOrder.toFixed(2)} />
         </s-grid>
       </s-section>

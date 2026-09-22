@@ -40,6 +40,8 @@ interface DealSpec {
   c?: number[];
   across?: boolean;
   mm?: { tt: "ALL" | "PRODUCTS" | "COLLECTIONS" | "EXCEPT"; p?: number[]; c?: number[] };
+  /** A/B arms: bars per arm key. */
+  arms?: Record<string, DealSpec["bars"]>;
   bars: { id?: string; q: number; pct?: number; gift?: number; gifts?: number[]; bundle?: { v: number | null; q: number; pct?: number }[] }[];
 }
 
@@ -59,6 +61,7 @@ function fnConfig(deals: DealSpec[]): FnConfig {
         ? { mm: { tt: d.mm.tt, p: (d.mm.p ?? []).map((p) => gid("Product", p)), c: (d.mm.c ?? []).map((c) => gid("Collection", c)) } }
         : {}),
       name: d.id,
+      ...(d.arms ? { arms: Object.fromEntries(Object.entries(d.arms).map(([k, bars]) => [k, fnBars({ ...d, bars })])) } : {}),
       bars: d.bars.map((b, i) => ({
         id: b.id ?? `${d.id}-b${i}`,
         q: b.q,
@@ -82,7 +85,10 @@ function fnConfig(deals: DealSpec[]): FnConfig {
   };
 }
 
-function giftConfig(deals: DealSpec[]) {
+const fnBars = (d: DealSpec) => fnConfig([{ ...d, arms: undefined }]).deals![0].bars;
+const giftBars = (d: DealSpec) => giftConfig([{ ...d, arms: undefined }]).deals[0].bars;
+
+function giftConfig(deals: DealSpec[]): { v: number; g: boolean; deals: ({ bars: unknown[] } & Record<string, unknown>)[] } {
   const out = deals.map((d) => ({
     id: d.id,
     tt: d.tt,
@@ -90,6 +96,7 @@ function giftConfig(deals: DealSpec[]) {
     c: d.c ?? [],
     across: Boolean(d.across),
     ...(d.mm ? { mm: { tt: d.mm.tt, p: d.mm.p ?? [], c: d.mm.c ?? [] } } : {}),
+    ...(d.arms ? { arms: Object.fromEntries(Object.entries(d.arms).map(([k, bars]) => [k, giftBars({ ...d, bars })])) } : {}),
     bars: d.bars.map((b, i) => ({
       id: b.id ?? `${d.id}-b${i}`,
       q: b.q,
@@ -108,6 +115,7 @@ interface Line {
   qty: number;
   price?: number;
   deal?: string;
+  arm?: string;
   bar?: string;
   gift?: string;
   upsell?: string;
@@ -125,6 +133,7 @@ const ajaxCart = (lines: Line[]) => ({
     properties: {
       ...(l.deal ? { _cartlift: l.deal } : {}),
       ...(l.bar ? { _cartlift_bar: l.bar } : {}),
+      ...(l.arm ? { _cartlift_arm: l.arm } : {}),
       ...(l.gift ? { _cartlift_gift: l.gift } : {}),
       ...(l.upsell ? { _cartlift_upsell: l.upsell } : {}),
       ...(l.bundle ? { _cartlift_bundle: l.bundle } : {}),
@@ -144,7 +153,7 @@ function freeGifts(deals: DealSpec[], lines: Line[], cols: Record<number, number
         quantity: l.qty,
         cost: { amountPerQuantity: { amount: String(l.price ?? 20) } },
         deal: l.deal ? { value: l.deal } : null,
-        arm: null,
+        arm: l.arm ? { value: l.arm } : null,
         bar: l.bar ? { value: l.bar } : null,
         gift: l.gift ? { value: l.gift } : null,
         upsell: l.upsell ? { value: l.upsell } : null,
@@ -389,6 +398,18 @@ describe("cart watcher agrees with the Discount Function", () => {
     const byCollection: DealSpec = { ...deal, mm: { tt: "COLLECTIONS", c: [5] } };
     expect(plan(giftConfig([byCollection]), ajaxCart(lines), {})).toBeNull();
     expect(reconcile([byCollection], lines, { 1: [], 7: [5], 8: [5] }).gifts.map((g) => g.variant)).toEqual([GIFT]);
+  });
+
+  test("A/B: an arm's own gift tier", () => {
+    const deal: DealSpec = {
+      id: "d1",
+      tt: "ALL",
+      bars: [{ q: 1 }, { q: 3, gifts: [GIFT] }],
+      arms: { B: [{ q: 1 }, { q: 2, gifts: [GIFT] }] },
+    };
+    const two = (arm?: string): Line[] => [{ key: "a", product: 1, variant: 11, qty: 2, deal: "d1", arm }];
+    expect(reconcile([deal], two("B")).gifts.map((g) => g.variant)).toEqual([GIFT]);
+    expect(reconcile([deal], two()).gifts).toEqual([]);
   });
 
   test("respects gifts the shopper dismissed", () => {

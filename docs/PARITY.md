@@ -120,13 +120,13 @@ Legend: ✅ done · 🟡 partial · ❌ missing
 | Revenue, added revenue, bundle orders, visitors, CR, AOV, revenue/visitor, ATC, ATC rate | ✅ |
 | Units per transaction | ✅ |
 | Checkout rate | ✅ |
-| Profit/visitor, profitability (needs product cost) | ❌ |
-| Subscribed count / subscription rate | ❌ |
-| Chart over time with comparison period + % change | 🟡 basic bars, no compare |
-| Custom date range | 🟡 7/30/90 only |
-| Tables: Bundles (custom KPI columns), Bars, Features, Products | 🟡 deals only |
-| CSV export (17 daily columns) | 🟡 fewer columns |
-| A/B: up to 4 variants, even/custom split, sticky per visitor, z-test on CR, ≥10 orders/arm, winner | ❌ (widget arm picker only) |
+| Profit/visitor, profitability (needs product cost) | ✅ unit cost via read_inventory |
+| Subscribed count / subscription rate | ✅ tracked (subscriptions ship in Phase 5) |
+| Chart over time with comparison period + % change | ✅ |
+| Custom date range | ✅ |
+| Tables: Bundles (custom KPI columns), Bars, Features, Products | ✅ |
+| CSV export (17 daily columns) | ✅ same columns |
+| A/B: up to 4 variants, even/custom split, sticky per visitor, z-test on CR, ≥10 orders/arm, winner | ✅ apply winner |
 
 ### 1.10 Admin, AI, billing
 | Kaching | CartLift |
@@ -192,7 +192,7 @@ Closes 1.1 (except subscriptions).
 - **Progressive gifts:** template + gift progress track in the widget.
 - Template gallery with all six templates (Subscription greyed until Phase 5).
 
-### Phase 3 — Analytics 2.0 + A/B testing (≈3–4 weeks) → ~80%
+### Phase 3 — Analytics 2.0 + A/B testing (≈3–4 weeks) → ~80%  ✅ built 2026-09-22
 Closes 1.9.
 - Track bar and product per event (views, ATC, orders) — schema: `DailyStat` gains
   `barId`, new `ProductStat`.
