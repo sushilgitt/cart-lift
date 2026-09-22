@@ -105,6 +105,10 @@ export interface SfArm {
   key: string;
   weight?: number;
   bars: SfBar[];
+  /** What else the arm changes (merged over the deal). */
+  style?: SfStyle;
+  variantPerUnit?: boolean;
+  showVariantPicker?: boolean;
 }
 
 export interface SfDeal {

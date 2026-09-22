@@ -345,10 +345,23 @@ function openChooser(mm: SfMixMatch, moneyFormat: string, from: HTMLElement, onP
   });
 }
 
-function mount(container: HTMLElement, deal: SfDeal, data: SfData, form: HTMLFormElement) {
+/** The deal as a visitor in `arm` sees it. */
+function armDeal(deal: SfDeal, arm: SfArm): SfDeal {
+  if (arm.key === "A") return deal;
+  return {
+    ...deal,
+    bars: arm.bars,
+    style: arm.style ?? deal.style,
+    variantPerUnit: arm.variantPerUnit ?? deal.variantPerUnit,
+    showVariantPicker: arm.showVariantPicker ?? deal.showVariantPicker,
+  };
+}
+
+function mount(container: HTMLElement, base: SfDeal, data: SfData, form: HTMLFormElement) {
   const rate = Number(shopify()?.currency?.rate) || 1;
   const ctx = { product: data.product, moneyFormat: data.moneyFormat, rate, options: data.options, mf: data.mf };
-  const arm = pickArm(deal);
+  const arm = pickArm(base);
+  const deal = armDeal(base, arm);
   const idInput = form.querySelector<HTMLInputElement>('[name="id"]');
   const firstBar = initialBar(arm.bars);
   const state: RenderState & { bars: SfArm["bars"] } = {
@@ -567,7 +580,7 @@ function mount(container: HTMLElement, deal: SfDeal, data: SfData, form: HTMLFor
     "submit",
     (e) => {
       const items = lines();
-      beacon(api, data.shop, [{ t: "atc", d: deal.id, a: arm.key }]);
+      beacon(api, data.shop, [{ t: "atc", d: deal.id, a: arm.key, b: state.barId, p: data.product.id }]);
       if (items.length <= 1) {
         sync();
         return; // Let the theme add to cart.
@@ -591,7 +604,18 @@ function mount(container: HTMLElement, deal: SfDeal, data: SfData, form: HTMLFor
     seen = sessionStorage.getItem(seenKey);
     sessionStorage.setItem(seenKey, "1");
   });
-  if (!seen) beacon(api, data.shop, [{ t: "view", d: deal.id, a: arm.key }]);
+  if (!seen) beacon(api, data.shop, [{ t: "view", d: deal.id, a: arm.key, p: data.product.id }]);
+  // Deals this visitor saw (and their arm): the pixel reports them with the
+  // order, so orders without deal lines still count for visitor conversion.
+  swallow(() => {
+    const all = JSON.parse(localStorage.getItem("cartlift_seen") || "{}");
+    if (all[deal.id] !== arm.key) {
+      all[deal.id] = arm.key;
+      const keys = Object.keys(all);
+      if (keys.length > 20) delete all[keys[0]];
+      localStorage.setItem("cartlift_seen", JSON.stringify(all));
+    }
+  });
 }
 
 /** `<cartlift-bundle product-id="…">`: a placement slot for custom themes. */

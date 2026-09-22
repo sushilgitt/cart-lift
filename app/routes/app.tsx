@@ -13,7 +13,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
   // No "installed" webhook exists, so provisioning happens on first load.
   const shop = await ensureShop(session.shop);
-  if (!shop.currencyCode) await backfillShopProfile(admin, session.shop);
+  if (!shop.currencyCode || !shop.timezone) await backfillShopProfile(admin, session.shop);
   await ensureWebPixel(admin, session.shop);
   await syncPlanFromShopify(admin, session.shop);
 

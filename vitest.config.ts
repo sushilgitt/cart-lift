@@ -4,6 +4,6 @@ import { defineConfig } from "vitest/config";
 // extensions/cartlift-discount (it builds the Wasm module); `npm test` runs both.
 export default defineConfig({
   test: {
-    include: ["packages/**/tests/**/*.test.ts"],
+    include: ["packages/**/tests/**/*.test.ts", "app/**/*.test.ts"],
   },
 });

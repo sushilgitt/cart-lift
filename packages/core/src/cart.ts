@@ -42,7 +42,12 @@ export interface GiftDeal extends Targeted<number> {
   /** Mix & match pool: products that also count toward the tiers. */
   mm?: Targeted<number> | null;
   bars: GiftBar[];
+  /** Running A/B test: each arm's bars (lines carry `_cartlift_arm`). */
+  arms?: Record<string, GiftBar[]>;
 }
+
+/** Bars of an arm, as the Function picks them. */
+const armBars = (deal: GiftDeal, arm: string) => (arm !== "A" && deal.arms?.[arm]) || deal.bars;
 
 export const barGifts = (bar: GiftBar): number[] => bar.gifts ?? (bar.gift ? [bar.gift] : []);
 
@@ -102,7 +107,7 @@ export function planGifts(
   for (const [tag, lines] of bundleLines) {
     const [dealId, barId] = tag.split(":");
     const deal = byId.get(dealId);
-    const bar = deal?.bars.find((b) => b.id === barId && b.k === "b");
+    const bar = deal && [deal.bars, ...Object.values(deal.arms ?? {})].flat().find((b) => b.id === barId && b.k === "b");
     if (!deal || !bar) continue;
     const tagged = [];
     for (const line of lines) {
@@ -114,7 +119,7 @@ export function planGifts(
   }
 
   // 1. Group deal units exactly like the Function.
-  const groups = new Map<string, { deal: GiftDeal; units: number; bar: string | null }>();
+  const groups = new Map<string, { deal: GiftDeal; units: number; bar: string | null; arm: string }>();
   for (const line of items) {
     const props = line.properties ?? {};
     if (props._cartlift_gift || props._cartlift_upsell || props._cartlift_bundle) continue;
@@ -141,11 +146,12 @@ export function planGifts(
     const key = deal.across ? deal.id : `${deal.id}|${line.product_id}`;
     let group = groups.get(key);
     if (!group) {
-      group = { deal, units: 0, bar: null };
+      group = { deal, units: 0, bar: null, arm: "A" };
       groups.set(key, group);
     }
     group.units += Number(line.quantity) || 0;
     if (props._cartlift_bar && !group.bar) group.bar = props._cartlift_bar;
+    if (props._cartlift_arm && group.arm === "A") group.arm = props._cartlift_arm;
   }
 
   // 2. Gifts the reached bars unlock: one unit per (deal, gift variant).
@@ -154,7 +160,7 @@ export function planGifts(
     for (const gift of barGifts(bar)) want[giftKey(dealId, gift)] = { deal: dealId, variant: Number(gift) };
   };
   for (const g of groups.values()) {
-    const bar = reachedBar((g.deal.bars ?? []).filter((b) => b.k !== "b"), g.units, g.bar);
+    const bar = reachedBar(armBars(g.deal, g.arm).filter((b) => b.k !== "b"), g.units, g.bar);
     if (bar) unlock(g.deal.id, bar);
   }
   for (const { deal, bar } of reachedBundles) unlock(deal.id, bar);

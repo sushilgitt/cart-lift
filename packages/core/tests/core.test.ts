@@ -1,6 +1,10 @@
 import { describe, expect, test } from "vitest";
 import {
+  abResult,
   bundleSets,
+  emptyTotals,
+  metrics,
+  zTest,
   dealMatches,
   escapeHtml,
   formatMoney,
@@ -159,5 +163,42 @@ describe("Phase 2 rules", () => {
     expect(priceMixed({ kind: "qty", qty: 3, dt: "percentage", dv: 10 }, [2000, 1200, 1600]).total).toBe(4320);
     expect(priceMixed({ kind: "qty", qty: 2, dt: "amount", dv: 15 }, [2000, 1000]).total).toBe(500);
     expect(priceMixed({ kind: "bxgy", qty: 3, get: 1, dt: "percentage", dv: 100 }, [2000, 1200, 1600]).total).toBe(3600);
+  });
+});
+
+describe("analytics and A/B statistics", () => {
+  test("metrics", () => {
+    const t = { ...emptyTotals(), views: 200, addToCarts: 40, checkouts: 20, orders: 10, eligibleOrders: 14, subscribedOrders: 2, units: 25, revenue: 1000, addedRevenue: 400, cost: 600 };
+    const m = metrics(t);
+    expect(m.conversion).toBeCloseTo(0.05);
+    expect(m.visitorConversion).toBeCloseTo(0.07);
+    expect(m.aov).toBe(100);
+    expect(m.profitPerVisitor).toBe(2);
+    expect(m.profitability).toBeCloseTo(0.4);
+    expect(m.checkoutRate).toBeCloseTo(0.1);
+    expect(m.subscriptionRate).toBeCloseTo(0.2);
+    expect(m.unitsPerOrder).toBe(2.5);
+    expect(metrics(emptyTotals()).profitPerVisitor).toBeNull();
+  });
+
+  test("z-test matches a known value", () => {
+    // 200/2000 vs 260/2000 → z ≈ 2.97, p ≈ 0.003.
+    const { z, p } = zTest({ visitors: 2000, orders: 200 }, { visitors: 2000, orders: 260 });
+    expect(z).toBeCloseTo(2.97, 1);
+    expect(p).toBeCloseTo(0.003, 2);
+  });
+
+  test("winner needs ≥10 orders per arm and significance against every arm", () => {
+    expect(abResult([{ key: "A", visitors: 100, orders: 9 }, { key: "B", visitors: 100, orders: 30 }]).status).toBe("collecting");
+    expect(abResult([{ key: "A", visitors: 2000, orders: 200 }, { key: "B", visitors: 2000, orders: 260 }])).toMatchObject({ status: "winner", winner: "B" });
+    expect(abResult([{ key: "A", visitors: 2000, orders: 200 }, { key: "B", visitors: 2000, orders: 210 }]).status).toBe("no_clear_winner");
+    // B beats A but not C: no clear winner.
+    expect(
+      abResult([
+        { key: "A", visitors: 2000, orders: 200 },
+        { key: "B", visitors: 2000, orders: 265 },
+        { key: "C", visitors: 2000, orders: 255 },
+      ]).status,
+    ).toBe("no_clear_winner");
   });
 });

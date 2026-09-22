@@ -96,6 +96,26 @@ export interface MixMatch {
   photoSize: number;
 }
 
+export type ArmKey = "A" | "B" | "C" | "D";
+export const ARM_KEYS: ArmKey[] = ["A", "B", "C", "D"];
+
+/** What an A/B variant may change: everything but visibility, schedule and mix & match pool. */
+export type ArmOverride = Partial<
+  Pick<DealConfig, "bars" | "style" | "discountName" | "variantPerUnit" | "showVariantPicker" | "progressiveGifts">
+>;
+
+export interface AbTest {
+  /** "off": no test. "running": arms are published. "ended": results kept, arm A shown. */
+  status: "off" | "running" | "ended";
+  /** Traffic split per arm in percent (arms present in `arms`, plus A). */
+  weights: Partial<Record<ArmKey, number>>;
+  arms: Partial<Record<Exclude<ArmKey, "A">, ArmOverride>>;
+  startedAt: string | null;
+  endedAt: string | null;
+}
+
+export const DEFAULT_AB_TEST: AbTest = { status: "off", weights: { A: 100 }, arms: {}, startedAt: null, endedAt: null };
+
 export type VariantDisplay = "dropdown" | "swatch";
 export type SwatchSource = "color" | "image" | "variant_image";
 export type SwatchShape = "circle" | "rounded" | "square";
@@ -162,6 +182,7 @@ export interface DealConfig {
   /** A bar also gets the gifts of every smaller bar. */
   progressiveGifts: boolean;
   mixMatch: MixMatch;
+  abTest: AbTest;
   /** Discount name in cart/checkout; empty = bar title. */
   discountName: string;
 }
@@ -430,6 +451,7 @@ export function defaultConfig(type: DealTypeKey): DealConfig {
     metafieldVars: [],
     progressiveGifts: false,
     mixMatch: { ...DEFAULT_MIX_MATCH },
+    abTest: { ...DEFAULT_AB_TEST, weights: { A: 100 }, arms: {} },
     discountName: "",
   };
 }
@@ -463,6 +485,44 @@ function normalizeItems(v: unknown): BundleItem[] {
       discountValue: Math.max(0, num(item?.discountValue, 0)),
     }),
   );
+}
+
+const ARM_FIELDS = ["bars", "style", "discountName", "variantPerUnit", "showVariantPicker", "progressiveGifts"] as const;
+
+function normalizeAbTest(raw: unknown, type: DealTypeKey): AbTest {
+  const t = (raw ?? {}) as Partial<AbTest>;
+  const arms: AbTest["arms"] = {};
+  for (const key of ["B", "C", "D"] as const) {
+    const override = t.arms?.[key];
+    if (!override || typeof override !== "object") continue;
+    // Normalize an arm's fields the same way as the deal's own.
+    const full = normalizeConfig({ ...override, bars: override.bars ?? [] }, type);
+    const clean: ArmOverride = {};
+    for (const field of ARM_FIELDS) if (field in override) (clean as Record<string, unknown>)[field] = full[field];
+    arms[key] = clean;
+  }
+  const keys: ArmKey[] = ["A", ...(Object.keys(arms) as ArmKey[])];
+  const weights: AbTest["weights"] = {};
+  for (const k of keys) weights[k] = Math.max(0, Math.min(100, num(t.weights?.[k], Math.floor(100 / keys.length))));
+  return {
+    status: oneOf(t.status, ["off", "running", "ended"] as const, "off"),
+    weights,
+    arms,
+    startedAt: typeof t.startedAt === "string" ? t.startedAt : null,
+    endedAt: typeof t.endedAt === "string" ? t.endedAt : null,
+  };
+}
+
+/** The config shoppers in `arm` get: the deal's own, with the arm's overrides. */
+export function armConfig(config: DealConfig, arm: string): DealConfig {
+  const override = arm === "A" ? undefined : config.abTest.arms[arm as Exclude<ArmKey, "A">];
+  return override ? { ...config, ...override } : config;
+}
+
+/** Arms shoppers are split between right now (A alone unless a test runs). */
+export function liveArms(config: DealConfig): ArmKey[] {
+  if (config.abTest.status !== "running") return ["A"];
+  return ["A", ...(Object.keys(config.abTest.arms) as ArmKey[])];
 }
 
 function normalizeImage(v: unknown): Bar["image"] {
@@ -536,6 +596,7 @@ export function normalizeConfig(raw: unknown, type: DealTypeKey = "QUANTITY_BREA
       showNames: r.mixMatch?.showNames == null ? DEFAULT_MIX_MATCH.showNames : Boolean(r.mixMatch.showNames),
       photoSize: Math.min(160, Math.max(32, num(r.mixMatch?.photoSize, DEFAULT_MIX_MATCH.photoSize))),
     },
+    abTest: normalizeAbTest(r.abTest, type),
     variantPerUnit: Boolean(r.variantPerUnit),
     // Deals saved before this option existed keep the theme's picker.
     showVariantPicker: Boolean(r.showVariantPicker ?? false),
@@ -594,6 +655,17 @@ export function validateConfig(config: DealConfig): string[] {
     if (bar.upsells.some((u) => u.source === "product" && !u.variant))
       errors.push(`Bar ${i + 1}: pick a product for each upsell.`);
   });
+  const ab = config.abTest;
+  if (ab.status === "running") {
+    const arms = liveArms(config);
+    if (arms.length < 2) errors.push("A/B test: add at least one variant to test against A.");
+    const total = arms.reduce((sum, k) => sum + (ab.weights[k] ?? 0), 0);
+    if (total !== 100) errors.push(`A/B test: the traffic split must add up to 100% (now ${total}%).`);
+    for (const k of arms) {
+      if (k === "A") continue;
+      for (const e of validateConfig({ ...armConfig(config, k), abTest: { ...DEFAULT_AB_TEST } })) errors.push(`Variant ${k}: ${e}`);
+    }
+  }
   const mm = config.mixMatch;
   if (mm.enabled) {
     if ((mm.pool === "products" || mm.pool === "except") && !mm.products.length)
@@ -762,6 +834,29 @@ export function storefrontDeal(deal: DealLike) {
     style: config.style,
     bars: config.bars.map((bar) => storefrontBar(bar, config)),
     ...mixMatchStorefront(config, deal),
+    ...abStorefront(config),
+  };
+}
+
+/** Running A/B test: each arm's weight and what it changes (the widget merges it over the deal). */
+function abStorefront(config: DealConfig) {
+  const arms = liveArms(config);
+  if (arms.length < 2) return {};
+  return {
+    weightA: config.abTest.weights.A ?? 0,
+    arms: arms
+      .filter((k) => k !== "A")
+      .map((key) => {
+        const c = armConfig(config, key);
+        return {
+          key,
+          weight: config.abTest.weights[key] ?? 0,
+          bars: c.bars.map((bar) => storefrontBar(bar, c)),
+          style: c.style,
+          variantPerUnit: c.variantPerUnit,
+          showVariantPicker: c.showVariantPicker,
+        };
+      }),
   };
 }
 
