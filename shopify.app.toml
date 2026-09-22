@@ -14,7 +14,13 @@ automatically_update_urls_on_dev = false
 # read_themes          — detect whether the app embed is switched on (onboarding)
 # write_pixels + read_customer_events — the analytics pixel that attributes
 #                        completed checkouts to deals without read_orders
-scopes = "write_discounts,read_products,read_themes,write_pixels,read_customer_events"
+# write_files          — images merchants upload for deal bars (Shopify Files)
+# read_inventory       — product unit cost for profit analytics (Phase 3)
+# read_markets         — limiting a deal to markets (Phase 5)
+# read_locales         — the store's languages for translations (Phase 5)
+# All four were added in one release so merchants approve once. Keep SCOPES
+# in the server environment identical to this list.
+scopes = "write_discounts,read_products,read_themes,write_pixels,read_customer_events,write_files,read_inventory,read_markets,read_locales"
 
 [auth]
 redirect_urls = [

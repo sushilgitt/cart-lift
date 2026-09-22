@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs } from "react-router";
 import { redirect, useFetcher, useLoaderData, useNavigate } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
@@ -8,6 +8,7 @@ import { authenticate } from "../shopify.server";
 import { getDeal, nextPriority, parseDealInput, shopIdFor } from "../lib/deal.server";
 import { syncShop } from "../lib/sync.server";
 import {
+  BUILT_IN_VARIABLES,
   DISCOUNT_LABELS,
   TEMPLATE_INFO,
   newBar,
@@ -19,6 +20,7 @@ import {
   type DealStyle,
   type DealTypeKey,
   type DiscountType,
+  type MetafieldVar,
   type ResourceRef,
   type TargetTypeKey,
   type Upsell,
@@ -174,6 +176,29 @@ function DealEditor({ data }: { data: LoaderData }) {
   const [deal, setDeal] = useState<EditorDeal>(initial);
   const [baseline, setBaseline] = useState(() => JSON.stringify(initial));
   const [previewPrice, setPreviewPrice] = useState(29.99);
+  const [previewProduct, setPreviewProduct] = useState<PreviewProduct | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+
+  const loadPreviewProduct = useCallback(async (id: string) => {
+    setPreviewLoading(true);
+    const product = await fetchPreviewProduct(id);
+    if (product) setPreviewProduct(product);
+    setPreviewLoading(false);
+  }, []);
+
+  // Preview on the deal's first product when it has one.
+  useEffect(() => {
+    const first = initial.products[0]?.id;
+    if (!first) return;
+    let cancelled = false;
+    fetchPreviewProduct(first).then((product) => {
+      if (!cancelled && product) setPreviewProduct(product);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const dirty = isNew || JSON.stringify(deal) !== baseline;
   const saving = fetcher.state !== "idle";
   const result = fetcher.data;
@@ -246,6 +271,28 @@ function DealEditor({ data }: { data: LoaderData }) {
     patch({ collections: selected.map((c: any) => ({ id: c.id, title: c.title, image: pickedImage(c) })) });
   };
 
+  const pickPreviewProduct = async () => {
+    const selected: any = await shopify.resourcePicker({ type: "product", multiple: false } as any);
+    if (selected?.[0]?.id) loadPreviewProduct(selected[0].id);
+  };
+
+  const pickVariants = async (current: VariantRef[]): Promise<VariantRef[] | null> => {
+    const selected: any = await shopify.resourcePicker({
+      type: "variant",
+      multiple: true,
+      selectionIds: current.map((v) => ({ id: v.id })),
+    } as any);
+    if (!selected) return null;
+    return selected.map((v: any) => ({
+      id: v.id,
+      title: v.title && v.title !== "Default Title" ? `${v.product?.title ?? v.displayName ?? ""} - ${v.title}` : v.product?.title ?? v.displayName ?? v.id,
+      productId: v.product?.id ?? "",
+      productTitle: v.product?.title,
+      image: v.image?.originalSrc ?? v.image?.url ?? null,
+      price: v.price ?? null,
+    }));
+  };
+
   const pickVariant = async (): Promise<VariantRef | null> => {
     const selected: any = await shopify.resourcePicker({ type: "product", multiple: false, filter: { variants: true } } as any);
     const product = selected?.[0];
@@ -263,6 +310,7 @@ function DealEditor({ data }: { data: LoaderData }) {
 
   const previewDeal = useMemo(() => storefrontDeal(deal) as any, [deal]);
   const previewCtx = useMemo(() => {
+    if (previewProduct) return { product: previewProduct.product, options: previewProduct.options, moneyFormat, rate: 1 };
     const cents = Math.round(previewPrice * 100);
     return {
       product: {
@@ -276,7 +324,7 @@ function DealEditor({ data }: { data: LoaderData }) {
       moneyFormat,
       rate: 1,
     };
-  }, [deal.products, previewPrice, moneyFormat]);
+  }, [deal.products, previewPrice, moneyFormat, previewProduct]);
 
   const errors = result && !result.ok ? result.errors : [];
   const isBxgy = deal.type === "BXGY";
@@ -398,8 +446,10 @@ function DealEditor({ data }: { data: LoaderData }) {
       <s-section heading="Deal bars">
         <s-stack gap="base">
           <s-paragraph color="subdued">
-            Text can use {"{{quantity}}"}, {"{{price}}"}, {"{{unit_price}}"}, {"{{full_price}}"}, {"{{saved_amount}}"},{" "}
-            {"{{saved_percentage}}"} and {"{{product}}"}. Amounts are in {currency}.
+            Text can use {[...BUILT_IN_VARIABLES, ...config.metafieldVars.map((m) => m.name).filter(Boolean)]
+              .map((v) => `{{${v}}}`)
+              .join(", ")}
+            . Amounts are in {currency}.
           </s-paragraph>
           {bars.map((bar, index) => (
             <BarEditor
@@ -412,6 +462,7 @@ function DealEditor({ data }: { data: LoaderData }) {
               onMove={(dir) => moveBar(index, dir)}
               onRemove={() => patchConfig({ bars: bars.filter((b) => b.id !== bar.id) })}
               pickVariant={pickVariant}
+              pickVariants={pickVariants}
             />
           ))}
           <s-button-group>
@@ -458,8 +509,17 @@ function DealEditor({ data }: { data: LoaderData }) {
             checked={config.variantPerUnit}
             onChange={(variantPerUnit) => patchConfig({ variantPerUnit })}
           />
+          <Checkbox
+            label="Show the variant picker on single-item bars"
+            details="Off: shoppers use your theme's variant picker for one item."
+            checked={config.showVariantPicker}
+            onChange={(showVariantPicker) => patchConfig({ showVariantPicker })}
+          />
         </s-stack>
       </s-section>
+
+      {/* ---------------- Metafield variables ---------------- */}
+      <MetafieldVarsEditor vars={config.metafieldVars} onChange={(metafieldVars) => patchConfig({ metafieldVars })} />
 
       {/* ---------------- Style ---------------- */}
       <StyleEditor style={config.style} onChange={patchStyle} />
@@ -468,7 +528,20 @@ function DealEditor({ data }: { data: LoaderData }) {
       <s-section slot="aside" heading="Live preview">
         <s-stack gap="base">
           <DealPreview deal={previewDeal} ctx={previewCtx} />
-          <NumberField label="Preview unit price" value={previewPrice} min={0} step={0.01} onChange={setPreviewPrice} suffix={currency} />
+          {previewProduct ? (
+            <s-stack direction="inline" gap="small-200" alignItems="center">
+              <s-thumbnail src={previewProduct.image ?? undefined} alt={previewProduct.product.title} size="small" />
+              <s-text>{previewProduct.product.title}</s-text>
+            </s-stack>
+          ) : (
+            <NumberField label="Preview unit price" value={previewPrice} min={0} step={0.01} onChange={setPreviewPrice} suffix={currency} />
+          )}
+          <s-button-group>
+            <s-button onClick={pickPreviewProduct} loading={previewLoading || undefined}>
+              {previewProduct ? "Change product" : "Preview a product"}
+            </s-button>
+            {previewProduct ? <s-button variant="tertiary" onClick={() => setPreviewProduct(null)}>Use a sample</s-button> : null}
+          </s-button-group>
           <s-paragraph color="subdued">Checkout applies the same prices automatically through the CartLift discount.</s-paragraph>
         </s-stack>
       </s-section>
@@ -512,6 +585,7 @@ function BarEditor({
   onMove,
   onRemove,
   pickVariant,
+  pickVariants,
 }: {
   bar: Bar;
   index: number;
@@ -521,6 +595,7 @@ function BarEditor({
   onMove: (dir: -1 | 1) => void;
   onRemove: () => void;
   pickVariant: () => Promise<VariantRef | null>;
+  pickVariants: (current: VariantRef[]) => Promise<VariantRef[] | null>;
 }) {
   const bxgy = bar.kind === "bxgy";
   return (
@@ -616,6 +691,17 @@ function BarEditor({
               onChange={(discountValue) => onChange({ discountValue: Math.max(0, discountValue) })}
             />
           ) : null}
+          {bxgy ? (
+            <NumberField
+              label="Extra discount on the rest"
+              details="On top of the free items, e.g. Buy 3 get 1 + 10%."
+              min={0}
+              max={100}
+              suffix="%"
+              value={bar.extraPercent}
+              onChange={(extraPercent) => onChange({ extraPercent: Math.min(100, Math.max(0, extraPercent)) })}
+            />
+          ) : null}
         </Grid>
 
         <Grid>
@@ -624,6 +710,36 @@ function BarEditor({
           <TextField label="Label" value={bar.label} onChange={(label) => onChange({ label })} placeholder="e.g. SAVE 20%" />
           <TextField label="Badge" value={bar.badge} onChange={(badge) => onChange({ badge })} placeholder="e.g. Most popular" />
         </Grid>
+        <HighlightsEditor highlights={bar.highlights} onChange={(highlights) => onChange({ highlights })} />
+        <BarImageEditor image={bar.image} onChange={(image) => onChange({ image })} />
+        <s-stack gap="small-200">
+          <s-text type="strong">Default variants</s-text>
+          <s-paragraph color="subdued">
+            Pre-selected in the variant pickers, one per item in order. Only variants of the product being viewed are used.
+          </s-paragraph>
+          {bar.defaultVariants.length ? (
+            <s-stack direction="inline" gap="small-200">
+              {bar.defaultVariants.map((v, i) => (
+                <s-badge key={`${v.id}-${i}`}>{`#${i + 1} ${v.title}`}</s-badge>
+              ))}
+            </s-stack>
+          ) : null}
+          <s-button-group>
+            <s-button
+              onClick={async () => {
+                const picked = await pickVariants(bar.defaultVariants);
+                if (picked) onChange({ defaultVariants: picked.slice(0, Math.max(1, bar.qty)) });
+              }}
+            >
+              {bar.defaultVariants.length ? "Change default variants" : "Set default variants"}
+            </s-button>
+            {bar.defaultVariants.length ? (
+              <s-button variant="tertiary" onClick={() => onChange({ defaultVariants: [] })}>
+                Clear
+              </s-button>
+            ) : null}
+          </s-button-group>
+        </s-stack>
         <s-stack direction="inline" gap="base">
           <Checkbox label="Selected by default" checked={bar.selected} onChange={(selected) => onChange({ selected })} />
           {bar.badge ? (
@@ -674,7 +790,7 @@ function BarEditor({
               pickVariant={pickVariant}
             />
           ))}
-          <div>
+          <s-button-group>
             <s-button
               icon="plus"
               onClick={async () => {
@@ -684,7 +800,20 @@ function BarEditor({
             >
               Add upsell
             </s-button>
-          </div>
+            <s-button
+              icon="plus"
+              onClick={() =>
+                onChange({
+                  upsells: [
+                    ...bar.upsells,
+                    newUpsell({ source: "complementary", text: "Add {{product}} for {{price}}", limit: 1 }),
+                  ],
+                })
+              }
+            >
+              Add complementary products
+            </s-button>
+          </s-button-group>
         </s-stack>
       </s-stack>
     </s-box>
@@ -702,27 +831,46 @@ function UpsellEditor({
   onRemove: () => void;
   pickVariant: () => Promise<VariantRef | null>;
 }) {
+  const complementary = upsell.source === "complementary";
   return (
     <s-box padding="small" border="base" borderRadius="base">
       <s-stack gap="small-200">
         <s-stack direction="inline" gap="small-200" alignItems="center" justifyContent="space-between">
-          <s-stack direction="inline" gap="small-200" alignItems="center">
-            <s-thumbnail src={upsell.variant?.image ?? undefined} alt={upsell.variant?.title ?? ""} size="small" />
-            <s-text>{upsell.variant?.title ?? "No product"}</s-text>
-          </s-stack>
+          {complementary ? (
+            <s-stack gap="small-100">
+              <s-text type="strong">Complementary products</s-text>
+              <s-text color="subdued">From the Search & Discovery app&apos;s complementary products for the viewed product.</s-text>
+            </s-stack>
+          ) : (
+            <s-stack direction="inline" gap="small-200" alignItems="center">
+              <s-thumbnail src={upsell.variant?.image ?? undefined} alt={upsell.variant?.title ?? ""} size="small" />
+              <s-text>{upsell.variant?.title ?? "No product"}</s-text>
+            </s-stack>
+          )}
           <s-button-group>
-            <s-button
-              variant="tertiary"
-              onClick={async () => {
-                const variant = await pickVariant();
-                if (variant) onChange({ variant });
-              }}
-            >
-              Change
-            </s-button>
+            {complementary ? null : (
+              <s-button
+                variant="tertiary"
+                onClick={async () => {
+                  const variant = await pickVariant();
+                  if (variant) onChange({ variant });
+                }}
+              >
+                Change
+              </s-button>
+            )}
             <s-button variant="tertiary" tone="critical" icon="delete" accessibilityLabel="Remove upsell" onClick={onRemove} />
           </s-button-group>
         </s-stack>
+        {complementary ? (
+          <NumberField
+            label="Products to offer"
+            min={1}
+            max={4}
+            value={upsell.limit}
+            onChange={(limit) => onChange({ limit: Math.min(4, Math.max(1, Math.floor(limit))) })}
+          />
+        ) : null}
         <TextField label="Text" value={upsell.text} onChange={(text) => onChange({ text })} />
         <Grid>
           <Select
@@ -750,6 +898,140 @@ function UpsellEditor({
         </s-stack>
       </s-stack>
     </s-box>
+  );
+}
+
+interface PreviewProduct {
+  product: { id: number; title: string; variants: { id: number; title: string; price: number; compare_at_price: number | null; available: boolean }[] };
+  options: { name: string; values: { name: string; color: string | null; image: string | null }[] }[];
+  image: string | null;
+}
+
+async function fetchPreviewProduct(id: string): Promise<PreviewProduct | null> {
+  try {
+    const response = await fetch(`/app/preview-product?id=${encodeURIComponent(id)}`);
+    return response.ok ? ((await response.json()) as PreviewProduct) : null;
+  } catch {
+    return null;
+  }
+}
+
+function HighlightsEditor({ highlights, onChange }: { highlights: string[]; onChange: (h: string[]) => void }) {
+  return (
+    <s-stack gap="small-200">
+      <s-text type="strong">Highlights</s-text>
+      {highlights.map((h, i) => (
+        <s-stack key={i} direction="inline" gap="small-200" alignItems="end">
+          <div style={{ flex: 1 }}>
+            <TextField
+              label={`Highlight ${i + 1}`}
+              value={h}
+              placeholder="e.g. Free shipping"
+              onChange={(value) => onChange(highlights.map((x, j) => (j === i ? value : x)))}
+            />
+          </div>
+          <s-button
+            variant="tertiary"
+            icon="x"
+            accessibilityLabel={`Remove highlight ${i + 1}`}
+            onClick={() => onChange(highlights.filter((_, j) => j !== i))}
+          />
+        </s-stack>
+      ))}
+      {highlights.length < 4 ? (
+        <div>
+          <s-button icon="plus" variant="tertiary" onClick={() => onChange([...highlights, ""])}>
+            Add highlight
+          </s-button>
+        </div>
+      ) : null}
+    </s-stack>
+  );
+}
+
+function BarImageEditor({ image, onChange }: { image: Bar["image"]; onChange: (image: Bar["image"]) => void }) {
+  const input = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const upload = async (file: File) => {
+    setBusy(true);
+    setError("");
+    try {
+      const body = new FormData();
+      body.append("file", file);
+      body.append("alt", image?.alt ?? "");
+      const response = await fetch("/app/upload", { method: "POST", body });
+      const result = await response.json();
+      if (result.ok) onChange({ url: result.url, alt: result.alt });
+      else setError(result.error || "Upload failed.");
+    } catch {
+      setError("Upload failed. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <s-stack gap="small-200">
+      <s-text type="strong">Bar image</s-text>
+      {image ? (
+        <s-stack direction="inline" gap="small-200" alignItems="center">
+          <s-thumbnail src={image.url} alt={image.alt} size="small" />
+          <div style={{ flex: 1 }}>
+            <TextField label="Image description (alt text)" value={image.alt} onChange={(alt) => onChange({ ...image, alt })} />
+          </div>
+          <s-button variant="tertiary" icon="x" accessibilityLabel="Remove image" onClick={() => onChange(null)} />
+        </s-stack>
+      ) : null}
+      <input
+        ref={input}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif"
+        style={{ display: "none" }}
+        onChange={(e) => {
+          const file = e.currentTarget.files?.[0];
+          e.currentTarget.value = "";
+          if (file) upload(file);
+        }}
+      />
+      <div>
+        <s-button icon="image" loading={busy || undefined} onClick={() => input.current?.click()}>
+          {image ? "Replace image" : "Upload image"}
+        </s-button>
+      </div>
+      {error ? <s-text tone="critical">{error}</s-text> : null}
+    </s-stack>
+  );
+}
+
+function MetafieldVarsEditor({ vars, onChange }: { vars: MetafieldVar[]; onChange: (vars: MetafieldVar[]) => void }) {
+  const set = (i: number, changes: Partial<MetafieldVar>) => onChange(vars.map((v, j) => (j === i ? { ...v, ...changes } : v)));
+  return (
+    <s-section heading="Metafield variables">
+      <s-stack gap="base">
+        <s-paragraph color="subdued">
+          Show a product metafield in any text, e.g. {"{{material}}"} from custom.material. Up to 4.
+        </s-paragraph>
+        {vars.map((v, i) => (
+          <s-stack key={i} direction="inline" gap="small-200" alignItems="end">
+            <Grid columns={3}>
+              <TextField label="Variable" value={v.name} placeholder="material" onChange={(name) => set(i, { name: name.trim() })} />
+              <TextField label="Namespace" value={v.namespace} placeholder="custom" onChange={(namespace) => set(i, { namespace: namespace.trim() })} />
+              <TextField label="Key" value={v.key} placeholder="material" onChange={(key) => set(i, { key: key.trim() })} />
+            </Grid>
+            <s-button variant="tertiary" icon="x" accessibilityLabel={`Remove variable ${i + 1}`} onClick={() => onChange(vars.filter((_, j) => j !== i))} />
+          </s-stack>
+        ))}
+        {vars.length < 4 ? (
+          <div>
+            <s-button icon="plus" onClick={() => onChange([...vars, { name: "", namespace: "custom", key: "" }])}>
+              Add metafield variable
+            </s-button>
+          </div>
+        ) : null}
+      </s-stack>
+    </s-section>
   );
 }
 
@@ -799,6 +1081,51 @@ function StyleEditor({ style, onChange }: { style: DealStyle; onChange: (changes
               onChange={(useCompareAt) => onChange({ useCompareAt })}
             />
           </s-stack>
+        </Grid>
+        <s-heading>Variant pickers</s-heading>
+        <Grid columns={3}>
+          <Select
+            label="Show variants as"
+            value={style.variants.display}
+            onChange={(display) => onChange({ variants: { ...style.variants, display: display as DealStyle["variants"]["display"] } })}
+            options={[
+              { value: "dropdown", label: "Dropdowns" },
+              { value: "swatch", label: "Swatches" },
+            ]}
+          />
+          {style.variants.display === "swatch" ? (
+            <>
+              <Select
+                label="Swatch"
+                value={style.variants.source}
+                onChange={(source) => onChange({ variants: { ...style.variants, source: source as DealStyle["variants"]["source"] } })}
+                options={[
+                  { value: "color", label: "Colour (from the product's option swatches)" },
+                  { value: "image", label: "Uploaded swatch image" },
+                  { value: "variant_image", label: "Variant image" },
+                ]}
+              />
+              <Select
+                label="Shape"
+                value={style.variants.shape}
+                onChange={(shape) => onChange({ variants: { ...style.variants, shape: shape as DealStyle["variants"]["shape"] } })}
+                options={[
+                  { value: "circle", label: "Circle" },
+                  { value: "rounded", label: "Rounded" },
+                  { value: "square", label: "Square" },
+                ]}
+              />
+              <NumberField
+                label="Swatch size"
+                min={16}
+                max={64}
+                suffix="px"
+                value={style.variants.size}
+                onChange={(size) => onChange({ variants: { ...style.variants, size } })}
+              />
+            </>
+          ) : null}
+          <NumberField label="Bar image size" min={24} max={160} suffix="px" value={style.imageSize} onChange={(imageSize) => onChange({ imageSize })} />
         </Grid>
         <s-heading>Colours</s-heading>
         <Grid columns={3}>
