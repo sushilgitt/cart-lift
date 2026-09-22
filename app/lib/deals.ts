@@ -10,7 +10,7 @@ import { priceBar as corePriceBar, type BarPrice } from "../../packages/core/src
 
 export type DiscountType = "none" | "percentage" | "amount" | "fixed_total";
 export type BarKind = "qty" | "bxgy" | "bundle";
-export type Layout = "vertical" | "horizontal" | "grid";
+export type Layout = "vertical" | "horizontal" | "grid" | "plain";
 export type DealTypeKey = "QUANTITY_BREAK" | "BXGY" | "BUNDLE";
 export type TargetTypeKey = "ALL" | "PRODUCTS" | "COLLECTIONS" | "EXCEPT";
 
@@ -150,6 +150,43 @@ export interface DealColors {
   badgeBg: string;
   badgeText: string;
   blockTitle: string;
+  /** Empty: same as the label colours. */
+  giftBg: string;
+  giftText: string;
+  /** Empty: transparent / the title colour / the border colour. */
+  upsellBg: string;
+  upsellText: string;
+  upsellBorder: string;
+}
+
+/**
+ * A colour value: a hex, or a link to the shop's brand palette like
+ * "brand:accents.0" (resolved when the deal is published).
+ */
+export type ColorValue = string;
+
+export interface BrandPalette {
+  neutrals: string[];
+  accents: string[];
+  badge: string[];
+  alerts: string[];
+}
+
+export const BRAND_GROUPS = ["neutrals", "accents", "badge", "alerts"] as const;
+
+export interface SavingsBar {
+  enabled: boolean;
+  /** Variables: {{saved_amount}}, {{saved_percentage}}. */
+  text: string;
+  /** Count the free gifts' value as savings. */
+  includeGifts: boolean;
+  background: ColorValue;
+  textColor: ColorValue;
+  valueColor: ColorValue;
+  border: boolean;
+  icon: boolean;
+  align: "left" | "center" | "right";
+  size: number;
 }
 
 export interface DealStyle {
@@ -162,9 +199,23 @@ export interface DealStyle {
   titleSize: number;
   /** Bar image size in px. */
   imageSize: number;
+  titleWeight: number;
+  subtitleSize: number;
+  priceSize: number;
+  blockTitleSize: number;
+  blockTitleWeight: number;
+  borderWidth: number;
+  barGap: number;
+  barPadding: number;
   variants: VariantStyle;
   /** Show every gift tier as a track above the bars (progressive gifts). */
   giftTrack: boolean;
+  savingsBar: SavingsBar;
+  /** Merchant HTML shown above / below the bars. */
+  htmlAbove: string;
+  htmlBelow: string;
+  /** CSS for this deal only (scoped to it when published). */
+  customCss: string;
   colors: DealColors;
 }
 
@@ -299,6 +350,61 @@ export const DEFAULT_COLORS: DealColors = {
   badgeBg: "#1a1a1a",
   badgeText: "#ffffff",
   blockTitle: "#1a1a1a",
+  giftBg: "",
+  giftText: "",
+  upsellBg: "",
+  upsellText: "",
+  upsellBorder: "",
+};
+
+export const DEFAULT_SAVINGS_BAR: SavingsBar = {
+  enabled: false,
+  text: "You're saving {{saved_amount}} on this order",
+  includeGifts: true,
+  background: "#e7f5ec",
+  textColor: "#1a1a1a",
+  valueColor: "#0f7a3a",
+  border: false,
+  icon: true,
+  align: "center",
+  size: 14,
+};
+
+/** Kaching-style preset colour themes. */
+export const PRESET_THEMES: Record<string, { label: string; colors: Partial<DealColors> }> = {
+  classic: { label: "Classic", colors: { ...DEFAULT_COLORS } },
+  purple: {
+    label: "Purple",
+    colors: { accent: "#6d28d9", barSelectedBg: "#f5f3ff", border: "#ddd6fe", borderSelected: "#6d28d9", labelBg: "#ede9fe", labelText: "#5b21b6", badgeBg: "#6d28d9", badgeText: "#ffffff", price: "#1a1a1a", title: "#1a1a1a", blockTitle: "#5b21b6" },
+  },
+  lime: {
+    label: "Lime",
+    colors: { accent: "#4d7c0f", barSelectedBg: "#f7fee7", border: "#d9f99d", borderSelected: "#65a30d", labelBg: "#ecfccb", labelText: "#3f6212", badgeBg: "#65a30d", badgeText: "#ffffff", price: "#1a1a1a", title: "#1a1a1a", blockTitle: "#3f6212" },
+  },
+  orange: {
+    label: "Orange",
+    colors: { accent: "#c2410c", barSelectedBg: "#fff7ed", border: "#fed7aa", borderSelected: "#ea580c", labelBg: "#ffedd5", labelText: "#9a3412", badgeBg: "#ea580c", badgeText: "#ffffff", price: "#1a1a1a", title: "#1a1a1a", blockTitle: "#9a3412" },
+  },
+  black: {
+    label: "Black",
+    colors: { accent: "#000000", barBg: "#ffffff", barSelectedBg: "#f2f2f2", border: "#cfcfcf", borderSelected: "#000000", labelBg: "#000000", labelText: "#ffffff", badgeBg: "#000000", badgeText: "#ffffff", price: "#000000", title: "#000000", blockTitle: "#000000" },
+  },
+};
+
+/** Which palette slot each deal colour links to when brand colours are applied. */
+export const BRAND_LINKS: Partial<Record<keyof DealColors, ColorValue>> = {
+  accent: "brand:accents.0",
+  borderSelected: "brand:accents.0",
+  barBg: "brand:neutrals.0",
+  barSelectedBg: "brand:neutrals.1",
+  border: "brand:neutrals.2",
+  title: "brand:neutrals.3",
+  price: "brand:neutrals.3",
+  blockTitle: "brand:neutrals.3",
+  badgeBg: "brand:badge.0",
+  badgeText: "brand:badge.1",
+  labelBg: "brand:alerts.1",
+  labelText: "brand:alerts.0",
 };
 
 export const DEFAULT_VARIANT_STYLE: VariantStyle = { display: "dropdown", source: "color", shape: "circle", size: 28 };
@@ -312,8 +418,20 @@ export const DEFAULT_STYLE: DealStyle = {
   radius: 10,
   titleSize: 15,
   imageSize: 56,
+  titleWeight: 700,
+  subtitleSize: 13,
+  priceSize: 16,
+  blockTitleSize: 13,
+  blockTitleWeight: 700,
+  borderWidth: 2,
+  barGap: 12,
+  barPadding: 14,
   variants: DEFAULT_VARIANT_STYLE,
   giftTrack: false,
+  savingsBar: DEFAULT_SAVINGS_BAR,
+  htmlAbove: "",
+  htmlBelow: "",
+  customCss: "",
   colors: DEFAULT_COLORS,
 };
 
@@ -444,7 +562,12 @@ export function templateBars(type: DealTypeKey): Bar[] {
 export function defaultConfig(type: DealTypeKey): DealConfig {
   return {
     bars: templateBars(type),
-    style: { ...DEFAULT_STYLE, variants: { ...DEFAULT_VARIANT_STYLE }, colors: { ...DEFAULT_COLORS } },
+    style: {
+      ...DEFAULT_STYLE,
+      variants: { ...DEFAULT_VARIANT_STYLE },
+      savingsBar: { ...DEFAULT_SAVINGS_BAR },
+      colors: { ...DEFAULT_COLORS },
+    },
     across: type === "BUNDLE",
     variantPerUnit: false,
     showVariantPicker: true,
@@ -461,6 +584,7 @@ const num = (v: unknown, d: number) => {
   return Number.isFinite(n) ? n : d;
 };
 const str = (v: unknown, d = "") => (typeof v === "string" ? v : d);
+const clampInt = (v: unknown, min: number, max: number, d: number) => Math.min(max, Math.max(min, Math.round(num(v, d))));
 const oneOf = <T extends string>(v: unknown, options: readonly T[], d: T): T =>
   options.includes(v as T) ? (v as T) : d;
 const strings = (v: unknown, max: number) =>
@@ -572,8 +696,31 @@ export function normalizeConfig(raw: unknown, type: DealTypeKey = "QUANTITY_BREA
     style: {
       ...DEFAULT_STYLE,
       ...style,
+      layout: oneOf(style.layout, ["vertical", "horizontal", "grid", "plain"] as const, DEFAULT_STYLE.layout),
       radius: num(style.radius, DEFAULT_STYLE.radius),
       titleSize: num(style.titleSize, DEFAULT_STYLE.titleSize),
+      titleWeight: clampInt(style.titleWeight, 300, 900, DEFAULT_STYLE.titleWeight),
+      subtitleSize: clampInt(style.subtitleSize, 9, 24, DEFAULT_STYLE.subtitleSize),
+      priceSize: clampInt(style.priceSize, 10, 32, DEFAULT_STYLE.priceSize),
+      blockTitleSize: clampInt(style.blockTitleSize, 9, 28, DEFAULT_STYLE.blockTitleSize),
+      blockTitleWeight: clampInt(style.blockTitleWeight, 300, 900, DEFAULT_STYLE.blockTitleWeight),
+      borderWidth: clampInt(style.borderWidth, 0, 6, DEFAULT_STYLE.borderWidth),
+      barGap: clampInt(style.barGap, 0, 32, DEFAULT_STYLE.barGap),
+      barPadding: clampInt(style.barPadding, 4, 32, DEFAULT_STYLE.barPadding),
+      savingsBar: {
+        ...DEFAULT_SAVINGS_BAR,
+        ...(style.savingsBar ?? {}),
+        enabled: Boolean(style.savingsBar?.enabled),
+        text: str(style.savingsBar?.text, DEFAULT_SAVINGS_BAR.text).slice(0, 200),
+        includeGifts: style.savingsBar?.includeGifts == null ? true : Boolean(style.savingsBar.includeGifts),
+        border: Boolean(style.savingsBar?.border),
+        icon: style.savingsBar?.icon == null ? true : Boolean(style.savingsBar.icon),
+        align: oneOf(style.savingsBar?.align, ["left", "center", "right"] as const, "center"),
+        size: clampInt(style.savingsBar?.size, 10, 24, DEFAULT_SAVINGS_BAR.size),
+      },
+      htmlAbove: str(style.htmlAbove).slice(0, 5000),
+      htmlBelow: str(style.htmlBelow).slice(0, 5000),
+      customCss: str(style.customCss).slice(0, 10000),
       imageSize: Math.min(160, Math.max(24, num(style.imageSize, DEFAULT_STYLE.imageSize))),
       variants: {
         display: oneOf(style.variants?.display, ["dropdown", "swatch"] as const, DEFAULT_VARIANT_STYLE.display),
@@ -817,7 +964,44 @@ export function mixMatchPool(config: DealConfig, deal: Pick<DealLike, "targetTyp
 /** "namespace.key": how Liquid publishes a metafield's value to the widget. */
 export const metafieldKey = (m: MetafieldVar) => `${m.namespace}.${m.key}`;
 
-export function storefrontDeal(deal: DealLike) {
+const HEX = /^#[0-9a-f]{6}$/i;
+
+/** The shop's brand palette from Shop.settings (up to 4 hex colours per group). */
+export function normalizePalette(raw: unknown): BrandPalette | null {
+  const p = raw as Partial<Record<keyof BrandPalette, unknown>> | null;
+  if (!p || typeof p !== "object") return null;
+  const group = (v: unknown) => (Array.isArray(v) ? v.filter((c): c is string => typeof c === "string" && HEX.test(c)).slice(0, 4) : []);
+  const out = { neutrals: group(p.neutrals), accents: group(p.accents), badge: group(p.badge), alerts: group(p.alerts) };
+  return Object.values(out).some((g) => g.length) ? out : null;
+}
+
+/** A colour for the storefront: a brand link resolved against the palette (empty when unset). */
+export function resolveColor(value: ColorValue, palette?: BrandPalette | null): string {
+  const m = /^brand:(neutrals|accents|badge|alerts)\.(\d)$/.exec(value || "");
+  if (!m) return value;
+  return palette?.[m[1] as keyof BrandPalette]?.[Number(m[2])] ?? "";
+}
+
+/** The style with every brand link resolved; custom CSS can't close its <style> element. */
+export function publishedStyle(style: DealStyle, palette?: BrandPalette | null): DealStyle {
+  const colors = Object.fromEntries(
+    Object.entries(style.colors).map(([k, v]) => [k, resolveColor(v, palette)]),
+  ) as unknown as DealColors;
+  const sb = style.savingsBar;
+  return {
+    ...style,
+    colors,
+    savingsBar: {
+      ...sb,
+      background: resolveColor(sb.background, palette),
+      textColor: resolveColor(sb.textColor, palette),
+      valueColor: resolveColor(sb.valueColor, palette),
+    },
+    customCss: style.customCss.replace(/<\/style/gi, "<\\/style"),
+  };
+}
+
+export function storefrontDeal(deal: DealLike, palette?: BrandPalette | null) {
   const config = normalizeConfig(deal.config, deal.type);
   return {
     id: deal.id,
@@ -832,15 +1016,15 @@ export function storefrontDeal(deal: DealLike) {
     variantPerUnit: config.variantPerUnit,
     showVariantPicker: config.showVariantPicker,
     mfv: config.metafieldVars.map((m) => ({ name: m.name, k: metafieldKey(m) })),
-    style: config.style,
+    style: publishedStyle(config.style, palette),
     bars: config.bars.map((bar) => storefrontBar(bar, config)),
     ...mixMatchStorefront(config, deal),
-    ...abStorefront(config),
+    ...abStorefront(config, palette),
   };
 }
 
 /** Running A/B test: each arm's weight and what it changes (the widget merges it over the deal). */
-function abStorefront(config: DealConfig) {
+function abStorefront(config: DealConfig, palette?: BrandPalette | null) {
   const arms = liveArms(config);
   if (arms.length < 2) return {};
   return {
@@ -853,7 +1037,7 @@ function abStorefront(config: DealConfig) {
           key,
           weight: config.abTest.weights[key] ?? 0,
           bars: c.bars.map((bar) => storefrontBar(bar, c)),
-          style: c.style,
+          style: publishedStyle(c.style, palette),
           variantPerUnit: c.variantPerUnit,
           showVariantPicker: c.showVariantPicker,
         };

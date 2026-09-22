@@ -11,7 +11,12 @@ import { abResult, MIN_ORDERS_PER_ARM } from "../../packages/core/src";
 import {
   ARM_FIELDS,
   ARM_KEYS,
+  BRAND_GROUPS,
+  BRAND_LINKS,
   BUILT_IN_VARIABLES,
+  PRESET_THEMES,
+  normalizePalette,
+  resolveColor,
   armConfig,
   DISCOUNT_LABELS,
   TEMPLATES,
@@ -29,6 +34,7 @@ import {
   type DealTypeKey,
   type ArmKey,
   type ArmOverride,
+  type BrandPalette,
   type BundleItem,
   type DiscountType,
   type MetafieldVar,
@@ -42,6 +48,7 @@ import {
 import {
   Checkbox,
   ColorField,
+  TextArea,
   DateTimeField,
   Grid,
   NumberField,
@@ -60,9 +67,10 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const shop = await prisma.shop.findUnique({
     where: { domain: session.shop },
-    select: { moneyFormat: true, currencyCode: true },
+    select: { moneyFormat: true, currencyCode: true, settings: true },
   });
   const moneyFormat = (shop?.moneyFormat || "${{amount}}").replace(/<[^>]*>/g, "");
+  const palette = normalizePalette((shop?.settings as { brandPalette?: unknown } | null)?.brandPalette);
 
   if (params.id === "new") {
     const url = new URL(request.url);
@@ -75,6 +83,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     const type = TEMPLATES[template].type;
     return {
       ab: null,
+      palette,
       isNew: true,
       moneyFormat,
       currency: shop?.currencyCode ?? "USD",
@@ -119,6 +128,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
 
   return {
     ab,
+    palette,
     isNew: false,
     moneyFormat,
     currency: shop?.currencyCode ?? "USD",
@@ -377,8 +387,8 @@ function DealEditor({ data }: { data: LoaderData }) {
 
   // The preview shows the variant being edited.
   const previewDeal = useMemo(
-    () => storefrontDeal({ ...deal, config: armKey === "A" ? deal.config : armConfig(deal.config, armKey) }) as any,
-    [deal, armKey],
+    () => storefrontDeal({ ...deal, config: armKey === "A" ? deal.config : armConfig(deal.config, armKey) }, data.palette) as any,
+    [deal, armKey, data.palette],
   );
   const previewCtx = useMemo(() => {
     if (previewProduct) return { product: previewProduct.product, options: previewProduct.options, moneyFormat, rate: 1 };
@@ -549,6 +559,7 @@ function DealEditor({ data }: { data: LoaderData }) {
       {/* ---------------- Bars ---------------- */}
       <s-section heading="Deal bars">
         <s-stack gap="base">
+          <s-paragraph color="subdued">Drag bars to reorder them, or use the arrows.</s-paragraph>
           <s-paragraph color="subdued">
             Text can use {[...BUILT_IN_VARIABLES, ...config.metafieldVars.map((m) => m.name).filter(Boolean)]
               .map((v) => `{{${v}}}`)
@@ -556,8 +567,27 @@ function DealEditor({ data }: { data: LoaderData }) {
             . Amounts are in {currency}.
           </s-paragraph>
           {bars.map((bar, index) => (
-            <BarEditor
+            <div
               key={bar.id}
+              draggable
+              onDragStart={(e) => {
+                e.dataTransfer.setData("text/plain", bar.id);
+                e.dataTransfer.effectAllowed = "move";
+              }}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault();
+                const from = bars.findIndex((b) => b.id === e.dataTransfer.getData("text/plain"));
+                if (from < 0 || from === index) return;
+                const next = [...bars];
+                const [moved] = next.splice(from, 1);
+                next.splice(index, 0, moved);
+                patchConfig({ bars: next });
+              }}
+              title="Drag to reorder"
+              style={{ cursor: "grab" }}
+            >
+            <BarEditor
               bar={bar}
               index={index}
               count={bars.length}
@@ -568,6 +598,7 @@ function DealEditor({ data }: { data: LoaderData }) {
               pickVariant={pickVariant}
               pickVariants={pickVariants}
             />
+            </div>
           ))}
           <s-button-group>
             <s-button
@@ -642,7 +673,7 @@ function DealEditor({ data }: { data: LoaderData }) {
       />
 
       {/* ---------------- Style ---------------- */}
-      <StyleEditor style={view.style} onChange={patchStyle} />
+      <StyleEditor style={view.style} palette={data.palette} onChange={patchStyle} />
 
       {/* ---------------- Preview ---------------- */}
       <s-section slot="aside" heading="Live preview">
@@ -1511,10 +1542,133 @@ const COLOR_FIELDS: [keyof DealStyle["colors"], string][] = [
   ["blockTitle", "Block title"],
 ];
 
-function StyleEditor({ style, onChange }: { style: DealStyle; onChange: (changes: Partial<DealStyle>) => void }) {
+/** Optional colours: empty follows another colour. */
+const EXTRA_COLOR_FIELDS: [keyof DealStyle["colors"], string, string][] = [
+  ["giftBg", "Gift background", "Same as label"],
+  ["giftText", "Gift text", "Same as label"],
+  ["upsellBg", "Upsell background", "Transparent"],
+  ["upsellText", "Upsell text", "Same as title"],
+  ["upsellBorder", "Upsell border", "Same as border"],
+];
+
+const WEIGHTS = [
+  { value: "400", label: "Regular" },
+  { value: "500", label: "Medium" },
+  { value: "600", label: "Semibold" },
+  { value: "700", label: "Bold" },
+  { value: "800", label: "Extra bold" },
+];
+
+const slotLabel = (link: string) => {
+  const m = /^brand:(\w+)\.(\d)$/.exec(link);
+  return m ? `Brand ${m[1]} ${Number(m[2]) + 1}` : link;
+};
+
+/** A colour that may be a hex or a link to a brand palette slot. */
+function ColorSlot({
+  label,
+  value,
+  palette,
+  onChange,
+  emptyLabel,
+}: {
+  label: string;
+  value: string;
+  palette: BrandPalette | null;
+  onChange: (v: string) => void;
+  emptyLabel?: string;
+}) {
+  if (value.startsWith("brand:")) {
+    const hex = resolveColor(value, palette);
+    return (
+      <s-stack gap="small-100">
+        <s-text>{label}</s-text>
+        <s-stack direction="inline" gap="small-200" alignItems="center">
+          <span aria-hidden="true" style={{ width: 20, height: 20, borderRadius: 4, border: "1px solid #ccc", background: hex || "transparent" }} />
+          <s-badge tone="info">{slotLabel(value)}</s-badge>
+          <s-button variant="tertiary" onClick={() => onChange(hex || "#000000")}>
+            Unlink
+          </s-button>
+        </s-stack>
+      </s-stack>
+    );
+  }
+  if (emptyLabel && !value) {
+    return (
+      <s-stack gap="small-100">
+        <s-text>{label}</s-text>
+        <s-stack direction="inline" gap="small-200" alignItems="center">
+          <s-text color="subdued">{emptyLabel}</s-text>
+          <s-button variant="tertiary" onClick={() => onChange("#ffffff")}>
+            Set colour
+          </s-button>
+        </s-stack>
+      </s-stack>
+    );
+  }
+  return (
+    <s-stack gap="small-100">
+      <ColorField label={label} value={value} onChange={onChange} />
+      <s-stack direction="inline" gap="small-200">
+        {palette ? (
+          <select
+            aria-label={`Link ${label} to a brand colour`}
+            value=""
+            onChange={(e) => e.currentTarget.value && onChange(e.currentTarget.value)}
+            style={{ fontSize: 12 }}
+          >
+            <option value="">Use a brand colour…</option>
+            {BRAND_GROUPS.flatMap((g) =>
+              palette[g].map((hex, i) => (
+                <option key={`${g}.${i}`} value={`brand:${g}.${i}`}>
+                  {`${g} ${i + 1} (${hex})`}
+                </option>
+              )),
+            )}
+          </select>
+        ) : null}
+        {emptyLabel ? (
+          <s-button variant="tertiary" onClick={() => onChange("")}>
+            Reset
+          </s-button>
+        ) : null}
+      </s-stack>
+    </s-stack>
+  );
+}
+
+function StyleEditor({
+  style,
+  palette,
+  onChange,
+}: {
+  style: DealStyle;
+  palette: BrandPalette | null;
+  onChange: (changes: Partial<DealStyle>) => void;
+}) {
+  const sb = style.savingsBar;
+  const setSb = (changes: Partial<DealStyle["savingsBar"]>) => onChange({ savingsBar: { ...sb, ...changes } });
   return (
     <s-section heading="Style">
       <s-stack gap="base">
+        <s-stack gap="small-200">
+          <s-text type="strong">Theme</s-text>
+          <s-stack direction="inline" gap="small-200">
+            {Object.entries(PRESET_THEMES).map(([key, preset]) => (
+              <s-button key={key} onClick={() => onChange({ colors: { ...style.colors, ...preset.colors } })}>
+                {preset.label}
+              </s-button>
+            ))}
+            {palette ? (
+              <s-button variant="primary" onClick={() => onChange({ colors: { ...style.colors, ...BRAND_LINKS } })}>
+                Use brand colours
+              </s-button>
+            ) : (
+              <s-link href="/app/settings">Set up brand colours</s-link>
+            )}
+          </s-stack>
+        </s-stack>
+
         <Grid columns={3}>
           <Select
             label="Layout"
@@ -1524,10 +1678,24 @@ function StyleEditor({ style, onChange }: { style: DealStyle; onChange: (changes
               { value: "vertical", label: "Vertical list" },
               { value: "horizontal", label: "Horizontal" },
               { value: "grid", label: "Grid (2 columns)" },
+              { value: "plain", label: "Plain (no cards)" },
             ]}
           />
           <NumberField label="Corner radius" min={0} max={30} suffix="px" value={style.radius} onChange={(radius) => onChange({ radius })} />
+          <NumberField label="Border width" min={0} max={6} suffix="px" value={style.borderWidth} onChange={(borderWidth) => onChange({ borderWidth })} />
+          <NumberField label="Space between bars" min={0} max={32} suffix="px" value={style.barGap} onChange={(barGap) => onChange({ barGap })} />
+          <NumberField label="Bar padding" min={4} max={32} suffix="px" value={style.barPadding} onChange={(barPadding) => onChange({ barPadding })} />
+          <NumberField label="Bar image size" min={24} max={160} suffix="px" value={style.imageSize} onChange={(imageSize) => onChange({ imageSize })} />
+        </Grid>
+
+        <s-heading>Text</s-heading>
+        <Grid columns={3}>
           <NumberField label="Title size" min={11} max={24} suffix="px" value={style.titleSize} onChange={(titleSize) => onChange({ titleSize })} />
+          <Select label="Title weight" value={String(style.titleWeight)} onChange={(v) => onChange({ titleWeight: Number(v) })} options={WEIGHTS} />
+          <NumberField label="Subtitle size" min={9} max={24} suffix="px" value={style.subtitleSize} onChange={(subtitleSize) => onChange({ subtitleSize })} />
+          <NumberField label="Price size" min={10} max={32} suffix="px" value={style.priceSize} onChange={(priceSize) => onChange({ priceSize })} />
+          <NumberField label="Block title size" min={9} max={28} suffix="px" value={style.blockTitleSize} onChange={(blockTitleSize) => onChange({ blockTitleSize })} />
+          <Select label="Block title weight" value={String(style.blockTitleWeight)} onChange={(v) => onChange({ blockTitleWeight: Number(v) })} options={WEIGHTS} />
         </Grid>
         <Grid>
           <TextField label="Block title" value={style.blockTitle} onChange={(blockTitle) => onChange({ blockTitle })} />
@@ -1547,6 +1715,7 @@ function StyleEditor({ style, onChange }: { style: DealStyle; onChange: (changes
             />
           </s-stack>
         </Grid>
+
         <s-heading>Variant pickers</s-heading>
         <Grid columns={3}>
           <Select
@@ -1590,19 +1759,86 @@ function StyleEditor({ style, onChange }: { style: DealStyle; onChange: (changes
               />
             </>
           ) : null}
-          <NumberField label="Bar image size" min={24} max={160} suffix="px" value={style.imageSize} onChange={(imageSize) => onChange({ imageSize })} />
         </Grid>
+
         <s-heading>Colours</s-heading>
         <Grid columns={3}>
           {COLOR_FIELDS.map(([key, label]) => (
-            <ColorField
+            <ColorSlot
               key={key}
               label={label}
               value={style.colors[key]}
+              palette={palette}
+              onChange={(value) => onChange({ colors: { ...style.colors, [key]: value } })}
+            />
+          ))}
+          {EXTRA_COLOR_FIELDS.map(([key, label, emptyLabel]) => (
+            <ColorSlot
+              key={key}
+              label={label}
+              value={style.colors[key]}
+              palette={palette}
+              emptyLabel={emptyLabel}
               onChange={(value) => onChange({ colors: { ...style.colors, [key]: value } })}
             />
           ))}
         </Grid>
+
+        <s-heading>Savings summary</s-heading>
+        <Checkbox
+          label="Show a savings summary under the bars"
+          details="“You're saving $X on this order” — updates as shoppers change their choice; hidden when there's no saving."
+          checked={sb.enabled}
+          onChange={(enabled) => setSb({ enabled })}
+        />
+        {sb.enabled ? (
+          <>
+            <TextField
+              label="Text"
+              value={sb.text}
+              details="Use {{saved_amount}} and {{saved_percentage}}."
+              onChange={(text) => setSb({ text })}
+            />
+            <Grid columns={3}>
+              <ColorSlot label="Background" value={sb.background} palette={palette} onChange={(background) => setSb({ background })} />
+              <ColorSlot label="Text colour" value={sb.textColor} palette={palette} onChange={(textColor) => setSb({ textColor })} />
+              <ColorSlot label="Savings colour" value={sb.valueColor} palette={palette} onChange={(valueColor) => setSb({ valueColor })} />
+              <Select
+                label="Alignment"
+                value={sb.align}
+                onChange={(align) => setSb({ align: align as DealStyle["savingsBar"]["align"] })}
+                options={[
+                  { value: "left", label: "Left" },
+                  { value: "center", label: "Centre" },
+                  { value: "right", label: "Right" },
+                ]}
+              />
+              <NumberField label="Text size" min={10} max={24} suffix="px" value={sb.size} onChange={(size) => setSb({ size })} />
+            </Grid>
+            <s-stack direction="inline" gap="base">
+              <Checkbox label="Count free gifts as savings" checked={sb.includeGifts} onChange={(includeGifts) => setSb({ includeGifts })} />
+              <Checkbox label="Border" checked={sb.border} onChange={(border) => setSb({ border })} />
+              <Checkbox label="Icon" checked={sb.icon} onChange={(icon) => setSb({ icon })} />
+            </s-stack>
+          </>
+        ) : null}
+
+        <s-heading>Custom code</s-heading>
+        <TextArea
+          label="HTML above the bars"
+          value={style.htmlAbove}
+          rows={3}
+          details="Shown as written on your store. The preview leaves out scripts."
+          onChange={(htmlAbove) => onChange({ htmlAbove })}
+        />
+        <TextArea label="HTML below the bars" value={style.htmlBelow} rows={3} onChange={(htmlBelow) => onChange({ htmlBelow })} />
+        <TextArea
+          label="CSS for this deal"
+          value={style.customCss}
+          rows={5}
+          details="Applies to this deal only, e.g. .cl-bar-title { letter-spacing: 0.04em; }"
+          onChange={(customCss) => onChange({ customCss })}
+        />
       </s-stack>
     </s-section>
   );

@@ -66,13 +66,13 @@ Legend: ✅ done · 🟡 partial · ❌ missing
 |---|---|
 | Layouts vertical / horizontal / grid | ✅ |
 | Colours for bar, selected bar, borders, title, subtitle, prices, label, badge, block title | ✅ (14 tokens) |
-| Typography & sizing (font sizes/weights, borders, spacing) | 🟡 radius + title size only |
-| Preset colour themes (e.g. purple, lime, orange, black) *(from third-party review)* | ❌ |
-| Brand Colors — scan storefront → palette (Neutrals, Accents, Badge, Alerts), linked to deals | ❌ |
-| Savings Summary Bar ("You're saving $X", live, optional gift value, own styling) | ❌ |
+| Typography & sizing (font sizes/weights, borders, spacing) | ✅ |
+| Preset colour themes (e.g. purple, lime, orange, black) *(from third-party review)* | ✅ |
+| Brand Colors — scan storefront → palette (Neutrals, Accents, Badge, Alerts), linked to deals | ✅ theme scan; links resolved at publish |
+| Savings Summary Bar ("You're saving $X", live, optional gift value, own styling) | ✅ |
 | Compare-at price × quantity | ✅ |
-| Custom CSS | ✅ (shop-wide) |
-| Custom HTML *(listing tag)* | ❌ |
+| Custom CSS | ✅ shop-wide and per deal (scoped) |
+| Custom HTML *(listing tag)* | ✅ above/below; scripts stripped in the admin preview |
 | Live preview | ✅ real product with switching |
 | Sticky ATC / countdown / scratch-off *(third-party only, unverified)* | ❌ optional |
 
@@ -205,7 +205,7 @@ Closes 1.9.
   z-test on CR with ≥10 orders/arm, "winner / no clear winner", apply winner.
 - Put "A/B testing" back on the plans.
 
-### Phase 4 — Design system (≈2 weeks) → ~85%
+### Phase 4 — Design system (≈2 weeks) → ~85%  ✅ built 2026-09-22 (sticky add-to-cart not built: unverified in Kaching)
 Closes 1.4.
 - Typography (sizes, weights), borders, spacing, image sizes, gift/upsell colours.
 - Preset colour themes; **Brand Colors**: scan the live theme's settings/CSS into

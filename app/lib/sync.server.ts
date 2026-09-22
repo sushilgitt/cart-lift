@@ -10,6 +10,7 @@ import {
   metafieldKey,
   mixMatchPool,
   normalizeConfig,
+  normalizePalette,
   numericId,
   renderText,
   storefrontDeal,
@@ -114,7 +115,8 @@ function functionBars(config: DealConfig, dealName: string) {
 }
 
 export function buildStorefrontConfig(shop: Shop, deals: Deal[], appUrl: string) {
-  const settings = (shop.settings ?? {}) as { customCss?: string };
+  const settings = (shop.settings ?? {}) as { customCss?: string; brandPalette?: unknown };
+  const palette = normalizePalette(settings.brandPalette);
   // Product metafields the deals use as text variables; Liquid renders their values.
   const mf = new Map<string, { k: string; ns: string; key: string }>();
   for (const deal of deals) {
@@ -127,7 +129,7 @@ export function buildStorefrontConfig(shop: Shop, deals: Deal[], appUrl: string)
     api: appUrl,
     css: settings.customCss ?? "",
     mf: [...mf.values()],
-    deals: deals.map((deal) => storefrontDeal({ ...deal, type: deal.type as DealTypeKey })),
+    deals: deals.map((deal) => storefrontDeal({ ...deal, type: deal.type as DealTypeKey }, palette)),
   };
 }
 

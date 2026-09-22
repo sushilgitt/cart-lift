@@ -482,3 +482,84 @@ describe("Phase 3: A/B arms and tracking", () => {
     expect(seen).toEqual({ d1: "A" });
   });
 });
+
+describe("Phase 4: design", () => {
+  const savings = (o: Json = {}) => ({
+    enabled: true, text: "You save {{saved_amount}} ({{saved_percentage}})", includeGifts: true,
+    background: "#eeeeee", textColor: "#111111", valueColor: "#0f7a3a", border: true, icon: true, align: "left", size: 15, ...o,
+  });
+  const gift = { id: 91, title: "Socks", image: null, price: "5.00", text: "+ FREE" };
+
+  test("savings summary: the selected bar's saving plus gifts and ticked upsells", () => {
+    const upsell = { id: "u1", variant: 777, title: "Cap", image: null, price: "10.00", text: "Cap", dt: "percentage", dv: 50, checked: true, onlyWhenSelected: false };
+    const page = productPage(
+      deal([bar({ id: "b1" }), bar({ id: "b2", qty: 2, dt: "percentage", dv: 10, selected: true, gifts: [gift], upsells: [upsell] })], {
+        style: { layout: "vertical", savingsBar: savings() },
+      }),
+    );
+    // $4 off the bar + $5 gift + $5 off the cap = $14 of $40 + $5 + $10 = 25%.
+    const bar2 = page.$(".cl-savings");
+    expect(bar2?.textContent).toBe("✓You save $14.00 (25%)");
+    expect(bar2?.className).toContain("cl-savings--left");
+    expect(bar2?.className).toContain("cl-savings--border");
+    expect(bar2?.getAttribute("style")).toContain("--cl-sb-value:#0f7a3a");
+    page.click('[data-bar="b1"]');
+    // Single bar, no discount, no gift: no saving, no bar.
+    expect(page.$(".cl-savings")).toBeNull();
+  });
+
+  test("savings summary: gifts left out when asked; off by default", () => {
+    const on = productPage(
+      deal([bar({ id: "b2", qty: 2, dt: "percentage", dv: 10, selected: true, gifts: [gift] })], {
+        style: { layout: "vertical", savingsBar: savings({ includeGifts: false, text: "{{saved_amount}}" }) },
+      }),
+    );
+    expect(on.$(".cl-savings")?.textContent).toBe("✓$4.00");
+    const off = productPage(deal([bar({ id: "b2", qty: 2, dt: "percentage", dv: 10, selected: true })]));
+    expect(off.$(".cl-savings")).toBeNull();
+  });
+
+  test("plain layout and style variables", () => {
+    const page = productPage(
+      deal([bar({ id: "b1" })], {
+        style: { layout: "plain", barGap: 4, borderWidth: 0, titleWeight: 600, priceSize: 20, colors: { giftBg: "#fafafa", upsellBorder: "" } },
+      }),
+    );
+    const block = page.$(".cl-block")!;
+    expect(block.className).toContain("cl-layout-plain");
+    const css = block.getAttribute("style")!;
+    expect(css).toContain("--cl-bar-gap:4px");
+    expect(css).toContain("--cl-border-width:0px");
+    expect(css).toContain("--cl-title-weight:600");
+    expect(css).toContain("--cl-price-size:20px");
+    expect(css).toContain("--cl-gift-bg:#fafafa");
+    expect(css).not.toContain("--cl-upsell-border");
+  });
+
+  test("deal CSS is scoped to the deal and can't close its style element", () => {
+    const page = productPage(deal([bar({ id: "b1" })], { style: { layout: "vertical", customCss: ".cl-bar{color:red}</style><b id=x>" } }));
+    const style = page.$('style[data-cartlift-css="d1"]')!;
+    expect(style.textContent).toBe('.cl-block[data-deal="d1"]{.cl-bar{color:red}<' + "\\" + '/style><b id=x>}');
+    expect(page.$("b#x")).toBeNull();
+  });
+
+  test("custom HTML: as written on the store, without scripts in the admin preview", () => {
+    const html = '<p class="note">Ships today</p><img src=x onerror="alert(1)"><a href="javascript:alert(2)">x</a><script>alert(3)</script>';
+    const d = deal([bar({ id: "b1" })], { style: { layout: "vertical", htmlAbove: html } });
+    const store = productPage(d);
+    expect(store.$(".cl-html--above p.note")?.textContent).toBe("Ships today");
+    expect(store.$(".cl-html--above script")).not.toBeNull();
+
+    // The admin preview (window.CartLift.preview) strips them.
+    const view = store.document.defaultView as unknown as {
+      CartLift: { preview: (el: unknown, deal: unknown, ctx: unknown) => void };
+      document: Document;
+    };
+    const el = view.document.createElement("div");
+    view.CartLift.preview(el, d, { product: TEE, moneyFormat: "${{amount}}", rate: 1 });
+    expect(el.querySelector(".cl-html--above p.note")?.textContent).toBe("Ships today");
+    expect(el.querySelector("script")).toBeNull();
+    expect(el.querySelector("img")?.getAttribute("onerror")).toBeNull();
+    expect(el.querySelector("a")?.getAttribute("href")).toBeNull();
+  });
+});

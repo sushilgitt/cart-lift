@@ -28,6 +28,7 @@ if (!w.CartLift?.loaded) {
 
   /** Admin live preview. Returns an updater. */
   CL.preview = (el, deal, ctx) => {
+    ctx = { ...ctx, preview: true };
     const state: RenderState = {
       barId: initialBar(deal.bars),
       variantId: ctx.product.variants[0] && ctx.product.variants[0].id,
@@ -50,7 +51,7 @@ if (!w.CartLift?.loaded) {
     draw();
     return (nextDeal, nextCtx) => {
       deal = nextDeal;
-      ctx = nextCtx || ctx;
+      ctx = nextCtx ? { ...nextCtx, preview: true } : ctx;
       state.bars = deal.bars;
       if (!deal.bars.some((b) => b.id === state.barId)) state.barId = initialBar(deal.bars);
       draw();

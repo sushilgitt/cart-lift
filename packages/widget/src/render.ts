@@ -32,6 +32,19 @@ function styleVars(style: SfStyle): string {
     "--cl-title-size": style.titleSize ? style.titleSize + "px" : null,
     "--cl-img-size": style.imageSize ? style.imageSize + "px" : null,
     "--cl-swatch-size": style.variants?.size ? style.variants.size + "px" : null,
+    "--cl-title-weight": style.titleWeight ? String(style.titleWeight) : null,
+    "--cl-subtitle-size": style.subtitleSize ? style.subtitleSize + "px" : null,
+    "--cl-price-size": style.priceSize ? style.priceSize + "px" : null,
+    "--cl-block-title-size": style.blockTitleSize ? style.blockTitleSize + "px" : null,
+    "--cl-block-title-weight": style.blockTitleWeight ? String(style.blockTitleWeight) : null,
+    "--cl-border-width": style.borderWidth != null ? style.borderWidth + "px" : null,
+    "--cl-bar-gap": style.barGap != null ? style.barGap + "px" : null,
+    "--cl-bar-padding": style.barPadding != null ? style.barPadding + "px" : null,
+    "--cl-gift-bg": c.giftBg,
+    "--cl-gift-text": c.giftText,
+    "--cl-upsell-bg": c.upsellBg,
+    "--cl-upsell-text": c.upsellText,
+    "--cl-upsell-border": c.upsellBorder,
   };
   let out = "";
   for (const k in map) if (safeCss(map[k])) out += k + ":" + map[k] + ";";
@@ -39,6 +52,55 @@ function styleVars(style: SfStyle): string {
 }
 
 const cssUrl = (url: string) => "url('" + esc(url).replace(/'/g, "%27") + "')";
+
+/** Merchant HTML for the admin preview: no scripts, handlers, frames or javascript: URLs. */
+export function sanitizeHtml(html: string): string {
+  if (!html) return "";
+  if (typeof DOMParser === "undefined") return esc(html);
+  const doc = new DOMParser().parseFromString("<body>" + html + "</body>", "text/html");
+  doc.querySelectorAll("script, iframe, object, embed, link, meta, base, form").forEach((el) => el.remove());
+  doc.querySelectorAll("*").forEach((el) => {
+    for (const attr of Array.from(el.attributes)) {
+      const name = attr.name.toLowerCase();
+      if (name.startsWith("on") || (/^(href|src|action|xlink:href|formaction)$/.test(name) && /^\s*javascript:/i.test(attr.value))) {
+        el.removeAttribute(attr.name);
+      }
+    }
+  });
+  return doc.body.innerHTML;
+}
+
+/** The deal's own CSS, nested under its block (native CSS nesting scopes it). */
+function scopedCss(dealId: string, css: string | undefined): string {
+  if (!css || !css.trim()) return "";
+  const body = css.replace(/<\/style/gi, "<\\/style");
+  return '<style data-cartlift-css="' + esc(dealId) + '">.cl-block[data-deal="' + esc(dealId).replace(/"/g, "") + '"]{' + body + "}</style>";
+}
+
+/** "You're saving $X": the selected bar's saving, plus gifts and ticked upsells. */
+function renderSavings(style: SfStyle, saved: number, full: number, fmt: (c: number) => string): string {
+  const sb = style.savingsBar;
+  if (!sb?.enabled || saved <= 0) return "";
+  const vars = {
+    saved_amount: '<span class="cl-savings-value">' + esc(fmt(saved)) + "</span>",
+    saved_percentage: '<span class="cl-savings-value">' + (full > 0 ? Math.round((saved / full) * 100) : 0) + "%</span>",
+  };
+  // Escape the text, then drop the (already escaped) value spans in.
+  const text = esc(sb.text || "").replace(/\{\{\s*(\w+)\s*\}\}/g, (m, key: string) =>
+    Object.prototype.hasOwnProperty.call(vars, key) ? vars[key as keyof typeof vars] : m,
+  );
+  const css: string[] = [];
+  if (safeCss(sb.background)) css.push("--cl-sb-bg:" + sb.background);
+  if (safeCss(sb.textColor)) css.push("--cl-sb-text:" + sb.textColor);
+  if (safeCss(sb.valueColor)) css.push("--cl-sb-value:" + sb.valueColor);
+  if (sb.size) css.push("--cl-sb-size:" + Math.min(24, Math.max(10, sb.size)) + "px");
+  const align = sb.align === "left" || sb.align === "right" ? sb.align : "center";
+  return (
+    '<div class="cl-savings cl-savings--' + align + (sb.border ? " cl-savings--border" : "") + '" style="' + css.join(";") + '" role="status">' +
+    (sb.icon ? '<span class="cl-savings-icon" aria-hidden="true">✓</span>' : "") +
+    "<span>" + text + "</span></div>"
+  );
+}
 
 /** A bar's gifts (older configs had a single `gift`). */
 export const barGifts = (bar: SfBar): SfGift[] => bar.gifts ?? (bar.gift ? [bar.gift] : []);
@@ -306,7 +368,10 @@ export function renderDeal(deal: SfDeal, state: RenderState, ctx: RenderCtx): st
   const compare = style.useCompareAt ? Number(variant.compare_at_price) || 0 : 0;
   const fmt = (cents: number) => formatMoney(cents, ctx.moneyFormat);
   const bars = state.bars || deal.bars;
-  const layout = ["vertical", "horizontal", "grid"].indexOf(style.layout || "") >= 0 ? style.layout : "vertical";
+  const layout = ["vertical", "horizontal", "grid", "plain"].indexOf(style.layout || "") >= 0 ? style.layout : "vertical";
+  // Savings of the selected bar, for the savings bar.
+  let savedTotal = 0;
+  let fullTotal = 0;
 
   // Metafield text variables.
   const mfVars: Record<string, string> = {};
@@ -319,6 +384,8 @@ export function renderDeal(deal: SfDeal, state: RenderState, ctx: RenderCtx): st
   if (style.showBlockTitle && style.blockTitle) {
     html += '<div class="cl-heading"><span>' + esc(style.blockTitle) + "</span></div>";
   }
+  html += scopedCss(deal.id, style.customCss);
+  if (style.htmlAbove) html += '<div class="cl-html cl-html--above">' + (ctx.preview ? sanitizeHtml(style.htmlAbove) : style.htmlAbove) + "</div>";
   html += renderGiftTrack(deal, bars, state);
   html += '<div class="cl-bars" role="radiogroup">';
 
@@ -397,9 +464,24 @@ export function renderDeal(deal: SfDeal, state: RenderState, ctx: RenderCtx): st
         '<span class="cl-extra-text">' + text(gift.text || "+ FREE gift", vars) + " — " + esc(gift.title) + "</span>" +
         '<span class="cl-extra-price">' + esc(fmt(0)) + (giftPrice ? "<s>" + esc(fmt(giftPrice)) + "</s>" : "") + "</span></div>";
     });
+    if (selected) {
+      savedTotal += p.saved;
+      fullTotal += p.full;
+      if (deal.style?.savingsBar?.includeGifts) {
+        for (const gift of barGifts(bar)) {
+          const value = moneyToCents(gift.price, ctx.rate);
+          savedTotal += value;
+          fullTotal += value;
+        }
+      }
+    }
     upsellEntries(bar, state, ctx).forEach((up) => {
       if (up.onlyWhenSelected && !selected) return;
       const pay = priceBar({ kind: "qty", qty: 1, dt: up.dt, dv: up.dv }, up.full, 0, ctx.rate).total;
+      if (selected && upsellOn(up, state)) {
+        savedTotal += Math.max(0, up.full - pay);
+        fullTotal += up.full;
+      }
       const upVars = { ...vars, product: up.title, price: fmt(pay), full_price: fmt(up.full) };
       extras +=
         '<label class="cl-upsell"><input type="checkbox" data-upsell="' + esc(up.key) + '"' + (upsellOn(up, state) ? " checked" : "") + ">" +
@@ -411,6 +493,9 @@ export function renderDeal(deal: SfDeal, state: RenderState, ctx: RenderCtx): st
     html += "</div>";
   });
 
-  html += "</div></div>";
+  html += "</div>";
+  html += renderSavings(style, savedTotal, fullTotal, fmt);
+  if (style.htmlBelow) html += '<div class="cl-html cl-html--below">' + (ctx.preview ? sanitizeHtml(style.htmlBelow) : style.htmlBelow) + "</div>";
+  html += "</div>";
   return html;
 }

@@ -45,6 +45,27 @@ export async function embedStatus(admin: AdminGraphql): Promise<{ enabled: boole
   }
 }
 
+/** The live theme's config/settings_data.json, parsed (null when unreadable). */
+export async function themeSettings(admin: AdminGraphql): Promise<unknown | null> {
+  try {
+    const data = await gql<{ themes: { nodes: { files: { nodes: { body: { content?: string } }[] } }[] } }>(
+      admin,
+      `#graphql
+        query cartliftThemeSettings {
+          themes(first: 1, roles: [MAIN]) {
+            nodes { files(filenames: ["config/settings_data.json"], first: 1) { nodes { body { ... on OnlineStoreThemeFileBodyText { content } } } } }
+          }
+        }`,
+    );
+    const content = data.themes.nodes[0]?.files.nodes[0]?.body?.content;
+    // settings_data.json may start with a /* … */ comment block.
+    return content ? JSON.parse(content.replace(/^\s*\/\*[\s\S]*?\*\//, "")) : null;
+  } catch (error) {
+    console.error("Theme settings read failed", error);
+    return null;
+  }
+}
+
 export function embedDeepLink(domain: string, apiKey: string) {
   return `https://${domain}/admin/themes/current/editor?context=apps&activateAppId=${apiKey}/cartlift-embed`;
 }

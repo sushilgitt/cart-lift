@@ -96,9 +96,34 @@ export interface SfStyle {
   radius?: number;
   titleSize?: number;
   imageSize?: number;
+  titleWeight?: number;
+  subtitleSize?: number;
+  priceSize?: number;
+  blockTitleSize?: number;
+  blockTitleWeight?: number;
+  borderWidth?: number;
+  barGap?: number;
+  barPadding?: number;
   variants?: SfVariantStyle;
   giftTrack?: boolean;
+  savingsBar?: SfSavingsBar;
+  htmlAbove?: string;
+  htmlBelow?: string;
+  customCss?: string;
   colors?: Record<string, string>;
+}
+
+export interface SfSavingsBar {
+  enabled: boolean;
+  text: string;
+  includeGifts: boolean;
+  background: string;
+  textColor: string;
+  valueColor: string;
+  border: boolean;
+  icon: boolean;
+  align: "left" | "center" | "right";
+  size: number;
 }
 
 export interface SfArm {
@@ -218,6 +243,8 @@ export interface RenderCtx {
   product: SfProduct;
   moneyFormat: string;
   rate: number;
+  /** Admin preview: merchant HTML is shown without scripts. */
+  preview?: boolean;
   options?: SfOptionSwatches[];
   mf?: Record<string, unknown>;
 }
