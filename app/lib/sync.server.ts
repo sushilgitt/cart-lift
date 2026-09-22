@@ -3,6 +3,7 @@ import type { Deal, Shop } from "@prisma/client";
 import prisma from "../db.server";
 import { gql, type AdminGraphql } from "./shop.server";
 import {
+  metafieldKey,
   normalizeConfig,
   numericId,
   renderText,
@@ -95,10 +96,18 @@ export function buildFunctionConfig(deals: Deal[]) {
 
 export function buildStorefrontConfig(shop: Shop, deals: Deal[], appUrl: string) {
   const settings = (shop.settings ?? {}) as { customCss?: string };
+  // Product metafields the deals use as text variables; Liquid renders their values.
+  const mf = new Map<string, { k: string; ns: string; key: string }>();
+  for (const deal of deals) {
+    for (const m of normalizeConfig(deal.config, deal.type as DealTypeKey).metafieldVars) {
+      if (m.namespace && m.key) mf.set(metafieldKey(m), { k: metafieldKey(m), ns: m.namespace, key: m.key });
+    }
+  }
   return {
     v: 1,
     api: appUrl,
     css: settings.customCss ?? "",
+    mf: [...mf.values()],
     deals: deals.map((deal) => storefrontDeal({ ...deal, type: deal.type as DealTypeKey })),
   };
 }

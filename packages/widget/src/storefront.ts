@@ -1,6 +1,7 @@
-import { matchesTarget } from "../../core/src";
-import { initialBar, renderDeal } from "./render";
-import type { RenderState, SfArm, SfData, SfDeal, SfProduct } from "./types";
+import { formatMoney, matchesTarget, priceBar } from "../../core/src";
+import { defaultUnits, initialBar, pickerRows, renderDeal, upsellEntries, upsellOn } from "./render";
+import type { RenderState, SfArm, SfData, SfDeal, SfProduct, SfRecommended } from "./types";
+import { withOption } from "./variants";
 
 /*
  * Storefront mount: renders the matching deal on the product page and drives
@@ -10,6 +11,15 @@ import type { RenderState, SfArm, SfData, SfDeal, SfProduct } from "./types";
  *    to cart as usual so its cart drawer keeps working.
  *  - Multi-line adds (per-unit variants, gifts, upsells): intercepts the submit
  *    and posts every line to /cart/add.js together.
+ *
+ * Placement: the "CartLift deals" app block, else a `<cartlift-bundle
+ * product-id="…">` element placed in the theme's product form, else above the
+ * add-to-cart button (app embed).
+ *
+ * Events, dispatched on the widget and bubbling:
+ *  - `cartlift:bar-selected`      { dealId, barId }
+ *  - `cartlift:variant-selected`  { dealId, unit, variantId }
+ *  - `cartlift:variants-changed`  { dealId, barId, variantIdQuantities, price, formattedPrice }
  */
 
 interface ShopifyGlobal {
@@ -165,19 +175,37 @@ function addLines(items: CartLine[]): Promise<void> {
     });
 }
 
+/** Complementary products for a product (Search & Discovery), fetched once per page. */
+const recommended = new Map<string, Promise<SfRecommended[]>>();
+function complementaryFor(productId: string | number): Promise<SfRecommended[]> {
+  const key = String(productId);
+  let request = recommended.get(key);
+  if (!request) {
+    request = fetch(root() + "recommendations/products.json?product_id=" + encodeURIComponent(key) + "&intent=complementary&limit=10")
+      .then((r) => (r.ok ? r.json() : { products: [] }))
+      .then((json) => (Array.isArray(json.products) ? json.products : []))
+      .catch(() => []);
+    recommended.set(key, request);
+  }
+  return request;
+}
+
 function mount(container: HTMLElement, deal: SfDeal, data: SfData, form: HTMLFormElement) {
   const rate = Number(shopify()?.currency?.rate) || 1;
-  const ctx = { product: data.product, moneyFormat: data.moneyFormat, rate };
+  const ctx = { product: data.product, moneyFormat: data.moneyFormat, rate, options: data.options, mf: data.mf };
   const arm = pickArm(deal);
   const idInput = form.querySelector<HTMLInputElement>('[name="id"]');
+  const firstBar = initialBar(arm.bars);
   const state: RenderState & { bars: SfArm["bars"] } = {
-    barId: initialBar(arm.bars),
+    barId: firstBar,
     variantId: idInput ? idInput.value : data.product.variants[0].id,
-    unitVariants: [],
+    unitVariants: defaultUnits(arm.bars.find((b) => b.id === firstBar), data.product),
     upsells: {},
     bars: arm.bars,
   };
   const api = data.config.api;
+  const emit = (name: string, detail: Record<string, unknown>) =>
+    container.dispatchEvent(new CustomEvent(name, { bubbles: true, detail: { dealId: deal.id, ...detail } }));
 
   // The widget owns the quantity; hide the theme's selector.
   formControls(form, "quantity").forEach((q) => {
@@ -201,19 +229,45 @@ function mount(container: HTMLElement, deal: SfDeal, data: SfData, form: HTMLFor
     if (tiedQuantities) props._cartlift_bar = bar.id;
     const items: CartLine[] = [];
     const counts: Record<string, number> = {};
+    const rows = pickerRows(deal, bar, data.product);
     for (let i = 0; i < bar.qty; i++) {
-      const id = String((deal.variantPerUnit && state.unitVariants[i]) || state.variantId);
+      const id = String((rows && state.unitVariants[i]) || state.variantId);
       counts[id] = (counts[id] || 0) + 1;
     }
     Object.keys(counts).forEach((id) => {
       items.push({ id: Number(id), quantity: counts[id], properties: props });
     });
     if (bar.gift) items.push({ id: bar.gift.id, quantity: 1, properties: { _cartlift_gift: deal.id } });
-    (bar.upsells || []).forEach((up) => {
-      const on = Object.prototype.hasOwnProperty.call(state.upsells, up.id) ? state.upsells[up.id] : up.checked;
-      if (on) items.push({ id: up.variant, quantity: 1, properties: { _cartlift_upsell: deal.id + ":" + up.id } });
+    upsellEntries(bar, state, ctx).forEach((up) => {
+      if (up.onlyWhenSelected && state.barId !== bar.id) return;
+      if (upsellOn(up, state))
+        items.push({ id: up.variant, quantity: 1, properties: { _cartlift_upsell: deal.id + ":" + up.upsellId } });
     });
     return items;
+  }
+
+  let lastSignature = "";
+  function announce(items: CartLine[]) {
+    const bar = selectedBar();
+    if (!bar) return;
+    const variantIdQuantities: Record<string, number> = {};
+    items
+      .filter((l) => l.properties._cartlift)
+      .forEach((l) => {
+        variantIdQuantities[l.id] = (variantIdQuantities[l.id] || 0) + l.quantity;
+      });
+    const variant = data.product.variants.find((v) => String(v.id) === String(state.variantId)) || data.product.variants[0];
+    const compare = deal.style?.useCompareAt ? Number(variant.compare_at_price) || 0 : 0;
+    const price = priceBar(bar, Number(variant.price) || 0, compare, rate).total;
+    const signature = JSON.stringify([bar.id, variantIdQuantities, price]);
+    if (signature === lastSignature) return;
+    lastSignature = signature;
+    emit("cartlift:variants-changed", {
+      barId: bar.id,
+      variantIdQuantities,
+      price,
+      formattedPrice: formatMoney(price, data.moneyFormat),
+    });
   }
 
   function sync() {
@@ -227,10 +281,19 @@ function mount(container: HTMLElement, deal: SfDeal, data: SfData, form: HTMLFor
     hiddenInput(form, "properties[_cartlift]").value = deal.id;
     hiddenInput(form, "properties[_cartlift_arm]").value = arm.key;
     if (tiedQuantities) hiddenInput(form, "properties[_cartlift_bar]").value = bar.id;
+    const items = lines();
+    // One line goes through the theme's form: make it add the variant the widget
+    // shows (picked per unit or on a single bar), not only the theme's own pick.
+    const main = items.filter((l) => l.properties._cartlift);
+    if (items.length === 1 && main.length === 1 && idInput && String(idInput.value) !== String(main[0].id)) {
+      idInput.value = String(main[0].id);
+      state.variantId = idInput.value;
+    }
     // Buy-it-now only supports a single line.
-    const multi = lines().length > 1;
+    const multi = items.length > 1;
     const dyn = form.querySelector(".shopify-payment-button");
     if (dyn) dyn.classList.toggle("cartlift-hidden", multi);
+    announce(items);
   }
 
   function draw() {
@@ -241,13 +304,30 @@ function mount(container: HTMLElement, deal: SfDeal, data: SfData, form: HTMLFor
   function choose(barId: string) {
     if (barId === state.barId) return;
     state.barId = barId;
-    state.unitVariants = [];
+    state.unitVariants = defaultUnits(state.bars.find((b) => b.id === barId), data.product);
     draw();
-    container.dispatchEvent(new CustomEvent("cartlift:bar-selected", { bubbles: true, detail: { dealId: deal.id, barId } }));
+    emit("cartlift:bar-selected", { barId });
+  }
+
+  /** Sets option `opt` of unit `unit` to `value`. */
+  function pickOption(unit: number, opt: number, value: string) {
+    const variants = data.product.variants;
+    const currentId = state.unitVariants[unit] || state.variantId;
+    const current = variants.find((v) => String(v.id) === String(currentId)) || variants[0];
+    const next = withOption(data.product, current, opt, value);
+    state.unitVariants[unit] = next.id;
+    draw();
+    emit("cartlift:variant-selected", { unit, variantId: next.id });
   }
 
   container.addEventListener("click", (e) => {
     const target = e.target as Element;
+    const swatch = target.closest<HTMLElement>(".cl-swatch");
+    if (swatch) {
+      e.preventDefault();
+      pickOption(Number(swatch.dataset.unit), Number(swatch.dataset.opt), swatch.dataset.val || "");
+      return;
+    }
     if (target.closest("select, input, label.cl-upsell")) return;
     const bar = target.closest("[data-bar]");
     if (bar) choose(bar.getAttribute("data-bar")!);
@@ -262,7 +342,10 @@ function mount(container: HTMLElement, deal: SfDeal, data: SfData, form: HTMLFor
   });
   container.addEventListener("change", (e) => {
     const t = e.target as HTMLInputElement;
-    if (t.hasAttribute("data-unit")) state.unitVariants[Number(t.getAttribute("data-unit"))] = t.value;
+    if (t.hasAttribute("data-opt")) {
+      pickOption(Number(t.getAttribute("data-unit")), Number(t.getAttribute("data-opt")), t.value);
+      return;
+    }
     if (t.hasAttribute("data-upsell")) state.upsells[t.getAttribute("data-upsell")!] = t.checked;
     sync();
   });
@@ -275,6 +358,14 @@ function mount(container: HTMLElement, deal: SfDeal, data: SfData, form: HTMLFor
       draw();
     }
   }, 300);
+
+  // Complementary upsells: load the products, then redraw.
+  if (arm.bars.some((b) => (b.upsells || []).some((u) => u.source === "complementary"))) {
+    complementaryFor(data.product.id).then((products) => {
+      state.complementary = products;
+      draw();
+    });
+  }
 
   let busy = false;
   form.addEventListener(
@@ -308,8 +399,15 @@ function mount(container: HTMLElement, deal: SfDeal, data: SfData, form: HTMLFor
   if (!seen) beacon(api, data.shop, [{ t: "view", d: deal.id, a: arm.key }]);
 }
 
+/** `<cartlift-bundle product-id="…">`: a placement slot for custom themes. */
+function defineElement() {
+  if (typeof customElements === "undefined" || customElements.get("cartlift-bundle")) return;
+  customElements.define("cartlift-bundle", class extends HTMLElement {});
+}
+
 export function init() {
   if (/[?&]cartlift=off\b/.test(window.location.search)) return;
+  defineElement();
   const parsed: SfData[] = [];
   all<HTMLScriptElement>(document, "script[data-cartlift-data]").forEach((node) => {
     try {
@@ -328,10 +426,15 @@ export function init() {
 
     let slot: HTMLElement | null = null;
     let form: HTMLFormElement | undefined;
+    const element = document.querySelector<HTMLElement>('cartlift-bundle[product-id="' + data.product.id + '"]');
     if (data.placement === "block") {
       slot = document.querySelector<HTMLElement>('.cartlift-slot[data-product-id="' + data.product.id + '"]');
       if (!slot) return;
       form = findForm(data.product, slot);
+    } else if (element) {
+      // Placed by the merchant inside the product form.
+      slot = element;
+      form = (element.closest('form[action*="/cart/add"]') as HTMLFormElement | null) || findForm(data.product, element);
     } else {
       form = findForm(data.product, null);
       if (form) {

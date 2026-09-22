@@ -512,6 +512,9 @@ export function storefrontBar(bar: Bar) {
   };
 }
 
+/** "namespace.key": how Liquid publishes a metafield's value to the widget. */
+export const metafieldKey = (m: MetafieldVar) => `${m.namespace}.${m.key}`;
+
 export function storefrontDeal(deal: DealLike) {
   const config = normalizeConfig(deal.config, deal.type);
   return {
@@ -526,7 +529,7 @@ export function storefrontDeal(deal: DealLike) {
     across: config.across,
     variantPerUnit: config.variantPerUnit,
     showVariantPicker: config.showVariantPicker,
-    mfv: config.metafieldVars.map((m) => m.name),
+    mfv: config.metafieldVars.map((m) => ({ name: m.name, k: metafieldKey(m) })),
     style: config.style,
     bars: config.bars.map(storefrontBar),
   };

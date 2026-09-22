@@ -16,15 +16,49 @@ describe("built assets", () => {
   });
 });
 
+type Json = Record<string, unknown>;
+
+const TEE = {
+  id: 1,
+  title: "Tee",
+  handle: "tee",
+  variants: [
+    { id: 11, title: "S", price: 2000, compare_at_price: null, available: true },
+    { id: 12, title: "M", price: 2000, compare_at_price: null, available: true },
+  ],
+};
+
+/** Size × Color, with Large / Blue sold out. */
+const SHIRT = {
+  id: 1,
+  title: "Shirt",
+  options: ["Size", "Color"],
+  variants: [
+    { id: 21, title: "S / Red", options: ["S", "Red"], price: 3000, compare_at_price: 4000, available: true, featured_image: { src: "https://cdn/s-red.png" } },
+    { id: 22, title: "S / Blue", options: ["S", "Blue"], price: 3000, compare_at_price: 4000, available: true, featured_image: { src: "https://cdn/s-blue.png" } },
+    { id: 23, title: "L / Red", options: ["L", "Red"], price: 3000, compare_at_price: 4000, available: true },
+    { id: 24, title: "L / Blue", options: ["L", "Blue"], price: 3000, compare_at_price: 4000, available: false },
+  ],
+};
+const SHIRT_SWATCHES = [
+  { name: "Size", values: [{ name: "S", color: null, image: null }, { name: "L", color: null, image: null }] },
+  { name: "Color", values: [{ name: "Red", color: "#ff0000", image: null }, { name: "Blue", color: "#0000ff", image: "https://cdn/blue.png" }] },
+];
+
 /** A product page with a Dawn-like form, the widget's data block and the built widget. */
-function productPage(deal: Record<string, unknown>) {
+function productPage(
+  deal: Json,
+  { product = TEE as Json, variant = String((product.variants as Json[])[0].id), extra = {} as Json, inForm = "", recommendations = [] as Json[] } = {},
+) {
   const window = new Window({ url: "https://shop.test/products/tee" });
   const document = window.document;
   const posts: { url: string; body: unknown }[] = [];
   const themeSubmits: number[] = [];
+  const events: [string, Json][] = [];
   Object.assign(window, {
     fetch: async (url: string, init?: { body?: string }) => {
       posts.push({ url: String(url), body: init?.body ? JSON.parse(init.body) : null });
+      if (String(url).includes("recommendations/products.json")) return { ok: true, json: async () => ({ products: recommendations }) };
       return { ok: true, json: async () => ({ items: [] }) };
     },
     Shopify: { currency: { rate: "1.0" }, routes: { root: "/" } },
@@ -34,19 +68,12 @@ function productPage(deal: Record<string, unknown>) {
   document.body.innerHTML = `
     <section class="shopify-section">
       <form action="/cart/add" class="product-form">
-        <input type="hidden" name="id" value="11">
+        <input type="hidden" name="id" value="${variant}">
+        ${inForm}
         <div class="product-form__quantity"><input name="quantity" value="1"></div>
         <div class="product-form__buttons"><button type="submit" name="add">Add</button><div class="shopify-payment-button"></div></div>
       </form>
     </section>`;
-  const product = {
-    id: 1,
-    title: "Tee",
-    variants: [
-      { id: 11, title: "S", price: 2000, compare_at_price: null, available: true },
-      { id: 12, title: "M", price: 2000, compare_at_price: null, available: true },
-    ],
-  };
   const data = document.createElement("script");
   data.type = "application/json";
   data.setAttribute("data-cartlift-data", "1");
@@ -57,29 +84,39 @@ function productPage(deal: Record<string, unknown>) {
     moneyFormat: "${{amount}}",
     shop: "s.myshopify.com",
     placement: "auto",
+    ...extra,
   });
   document.body.appendChild(data);
   const form = document.querySelector("form")!;
   form.addEventListener("submit", () => themeSubmits.push(1));
+  for (const name of ["cartlift:bar-selected", "cartlift:variant-selected", "cartlift:variants-changed"]) {
+    document.addEventListener(name, (e) => events.push([name, (e as unknown as { detail: Json }).detail]));
+  }
   window.eval(asset("cartlift.js"));
 
-  const input = (name: string) =>
-    (form.querySelector(`[name="${name}"]`) as unknown as { value: string } | null)?.value;
-  const click = (barId: string) =>
-    document.querySelector(`[data-bar="${barId}"]`)!.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+  const $ = (selector: string) => document.querySelector(selector) as unknown as HTMLElement | null;
+  const input = (name: string) => (form.querySelector(`[name="${name}"]`) as unknown as { value: string } | null)?.value;
+  const click = (selector: string) => $(selector)!.dispatchEvent(new window.MouseEvent("click", { bubbles: true }) as unknown as Event);
+  const choose = (selector: string, value: string) => {
+    const el = $(selector) as unknown as HTMLSelectElement;
+    el.value = value;
+    el.dispatchEvent(new window.Event("change", { bubbles: true }) as unknown as Event);
+  };
   const submit = () => {
     const event = new window.Event("submit", { bubbles: true, cancelable: true });
     form.dispatchEvent(event);
     return event.defaultPrevented;
   };
-  return { document, input, click, submit, posts, themeSubmits };
+  const added = () => posts.find((p) => p.url.endsWith("cart/add.js"))?.body as { items: Json[] } | undefined;
+  const settle = () => new Promise((r) => setTimeout(r, 20));
+  return { document, $, input, click, choose, submit, added, settle, posts, themeSubmits, events };
 }
 
-const bar = (o: Record<string, unknown>) => ({
+const bar = (o: Json) => ({
   kind: "qty", qty: 1, get: 0, dt: "none", dv: 0, title: "Bar", subtitle: "", label: "", badge: "",
   badgeStyle: "simple", selected: false, gift: null, upsells: [], ...o,
 });
-const deal = (bars: unknown[], o: Record<string, unknown> = {}) => ({
+const deal = (bars: unknown[], o: Json = {}) => ({
   id: "d1", name: "Deal", type: "QUANTITY_BREAK", tt: "ALL", p: [], c: [], s: null, e: null,
   across: false, variantPerUnit: false, style: { layout: "vertical", showUnitPrice: true }, bars, ...o,
 });
@@ -88,11 +125,11 @@ describe("storefront widget", () => {
   test("renders the bars with prices and drives the theme form", () => {
     const page = productPage(deal([bar({ id: "b1" }), bar({ id: "b2", qty: 2, dt: "percentage", dv: 10, selected: true })]));
     expect(page.document.querySelectorAll(".cl-bar")).toHaveLength(2);
-    expect(page.document.querySelector(".cl-bar.is-selected .cl-price")?.textContent).toBe("$36.00");
+    expect(page.$(".cl-bar.is-selected .cl-price")?.textContent).toBe("$36.00");
     expect(page.input("quantity")).toBe("2");
     expect(page.input("properties[_cartlift]")).toBe("d1");
     expect(page.input("properties[_cartlift_bar]")).toBeUndefined();
-    page.click("b1");
+    page.click('[data-bar="b1"]');
     expect(page.input("quantity")).toBe("1");
     // A single line goes through the theme's own add to cart.
     expect(page.submit()).toBe(false);
@@ -103,7 +140,7 @@ describe("storefront widget", () => {
     const page = productPage(
       deal([bar({ id: "b1" }), bar({ id: "plain", qty: 2, dt: "percentage", dv: 10 }), bar({ id: "gifted", qty: 2, dt: "percentage", dv: 10 })]),
     );
-    page.click("gifted");
+    page.click('[data-bar="gifted"]');
     expect(page.input("properties[_cartlift_bar]")).toBe("gifted");
   });
 
@@ -112,8 +149,7 @@ describe("storefront widget", () => {
     const page = productPage(deal([bar({ id: "b1" }), bar({ id: "b2", qty: 2, gift, selected: true })]));
     expect(page.submit()).toBe(true);
     expect(page.themeSubmits).toHaveLength(0);
-    const add = page.posts.find((p) => p.url.endsWith("cart/add.js"));
-    expect(add?.body).toEqual({
+    expect(page.added()).toEqual({
       items: [
         { id: 11, quantity: 2, properties: { _cartlift: "d1", _cartlift_arm: "A" } },
         { id: 555, quantity: 1, properties: { _cartlift_gift: "d1" } },
@@ -122,8 +158,156 @@ describe("storefront widget", () => {
   });
 
   test("escapes merchant text", () => {
-    const page = productPage(deal([bar({ id: "b1", title: "<img src=x onerror=alert(1)>" })]));
+    const page = productPage(deal([bar({ id: "b1", title: "<img src=x onerror=alert(1)>", highlights: ["<b>bold</b>"] })]));
     expect(page.document.querySelector("img[src=x]")).toBeNull();
-    expect(page.document.querySelector(".cl-bar-title")?.textContent).toBe("<img src=x onerror=alert(1)>");
+    expect(page.$(".cl-bar-title")?.textContent).toBe("<img src=x onerror=alert(1)>");
+    expect(page.$(".cl-highlights li")?.textContent).toBe("<b>bold</b>");
+  });
+});
+
+describe("Phase 1: bars", () => {
+  test("bar image and highlights", () => {
+    const page = productPage(
+      deal([bar({ id: "b1", image: { url: "https://cdn/pack.png", alt: "Pack" }, highlights: ["Free shipping", "", "Save {{saved_percentage}}"], dt: "percentage", dv: 10 })]),
+    );
+    const img = page.$(".cl-bar-img") as unknown as HTMLImageElement;
+    expect(img.getAttribute("src")).toBe("https://cdn/pack.png");
+    expect(img.getAttribute("alt")).toBe("Pack");
+    expect([...page.document.querySelectorAll(".cl-highlights li")].map((li) => li.textContent)).toEqual(["Free shipping", "Save 10%"]);
+  });
+
+  test("new variables: compare_price, discount and metafield values", () => {
+    const page = productPage(
+      deal([bar({ id: "b1", qty: 2, dt: "percentage", dv: 15, title: "{{discount}} off, was {{compare_price}}", subtitle: "{{material}} · {{missing}}" })], {
+        mfv: [{ name: "material", k: "custom.material" }, { name: "missing", k: "custom.none" }],
+      }),
+      { product: SHIRT, extra: { mf: { "custom.material": "Organic cotton", "custom.none": null } } },
+    );
+    expect(page.$(".cl-bar-title")?.textContent).toBe("15% off, was $80.00");
+    // Unknown or empty variables stay as typed.
+    expect(page.$(".cl-bar-sub")?.textContent).toBe("Organic cotton · {{missing}}");
+  });
+
+  test("buy X get Y with an extra percentage shows the checkout price", () => {
+    const page = productPage(deal([bar({ id: "b1", kind: "bxgy", qty: 4, get: 1, dt: "percentage", dv: 100, xp: 10 })]));
+    // 4 × $20 − 1 free = $60, − 10% = $54.
+    expect(page.$(".cl-price")?.textContent).toBe("$54.00");
+  });
+});
+
+describe("Phase 1: variants", () => {
+  test("per-unit pickers have one dropdown per option; sold-out combinations are marked", () => {
+    const page = productPage(deal([bar({ id: "b1", qty: 2, selected: true })], { variantPerUnit: true }), { product: SHIRT, variant: "21" });
+    const rows = page.document.querySelectorAll(".cl-variant-row");
+    expect(rows).toHaveLength(2);
+    expect(rows[0].querySelectorAll("select")).toHaveLength(2);
+    expect(rows[0].querySelector(".cl-unit-no")?.textContent).toBe("#1");
+    // Unit 2: switch to L; Blue is then sold out.
+    page.choose('select[data-unit="1"][data-opt="0"]', "L");
+    const colors = [...page.document.querySelectorAll('select[data-unit="1"][data-opt="1"] option')].map((o) => o.textContent);
+    expect(colors).toEqual(["Red", "Blue — sold out"]);
+    expect(page.events.find(([n]) => n === "cartlift:variant-selected")?.[1]).toEqual({ dealId: "d1", unit: 1, variantId: 23 });
+    expect(page.submit()).toBe(true);
+    expect(page.added()?.items).toEqual([
+      { id: 21, quantity: 1, properties: { _cartlift: "d1", _cartlift_arm: "A" } },
+      { id: 23, quantity: 1, properties: { _cartlift: "d1", _cartlift_arm: "A" } },
+    ]);
+  });
+
+  test("same variant on every unit: the theme adds it (form id follows the pickers)", () => {
+    const page = productPage(deal([bar({ id: "b1", qty: 2, selected: true })], { variantPerUnit: true }), { product: SHIRT, variant: "21" });
+    page.choose('select[data-unit="0"][data-opt="1"]', "Blue");
+    page.choose('select[data-unit="1"][data-opt="1"]', "Blue");
+    expect(page.input("id")).toBe("22");
+    expect(page.submit()).toBe(false);
+  });
+
+  test("swatches: colour, uploaded image or variant image, with shape and selection", () => {
+    const style = (source: string) => ({ layout: "vertical", variants: { display: "swatch", source, shape: "square", size: 30 } });
+    const color = productPage(deal([bar({ id: "b1", selected: true })], { showVariantPicker: true, style: style("color") }), {
+      product: SHIRT,
+      variant: "21",
+      extra: { options: SHIRT_SWATCHES },
+    });
+    const red = color.$('.cl-swatch[data-opt="1"][data-val="Red"]')!;
+    expect(red.getAttribute("style")).toContain("background-color:#ff0000");
+    expect(red.className).toContain("cl-swatch--square");
+    expect(red.className).toContain("is-selected");
+    // Size has no swatch data: text buttons. Single-unit rows have no "#1".
+    expect(color.$('.cl-swatch[data-opt="0"][data-val="S"]')!.className).toContain("cl-swatch--text");
+    expect(color.$(".cl-unit-no")).toBeNull();
+    color.click('.cl-swatch[data-opt="1"][data-val="Blue"]');
+    expect(color.input("id")).toBe("22");
+
+    const image = productPage(deal([bar({ id: "b1", selected: true })], { showVariantPicker: true, style: style("image") }), {
+      product: SHIRT, variant: "21", extra: { options: SHIRT_SWATCHES },
+    });
+    expect(image.$('.cl-swatch[data-val="Blue"]')!.getAttribute("style")).toContain("https://cdn/blue.png");
+
+    const variantImage = productPage(deal([bar({ id: "b1", selected: true })], { showVariantPicker: true, style: style("variant_image") }), {
+      product: SHIRT, variant: "21", extra: { options: SHIRT_SWATCHES },
+    });
+    expect(variantImage.$('.cl-swatch[data-val="Blue"]')!.getAttribute("style")).toContain("https://cdn/s-blue.png");
+  });
+
+  test("single-bar picker only on quantity-1 bars, and only when switched on", () => {
+    const on = productPage(deal([bar({ id: "b1", selected: true }), bar({ id: "b2", qty: 2 })], { showVariantPicker: true }), { product: SHIRT, variant: "21" });
+    expect(on.document.querySelectorAll(".cl-variant-row")).toHaveLength(1);
+    on.click('[data-bar="b2"]');
+    expect(on.document.querySelectorAll(".cl-variant-row")).toHaveLength(0);
+    const off = productPage(deal([bar({ id: "b1", selected: true })]), { product: SHIRT, variant: "21" });
+    expect(off.document.querySelectorAll(".cl-variant-row")).toHaveLength(0);
+  });
+
+  test("default variants per unit; sold-out defaults are skipped", () => {
+    const page = productPage(
+      deal([bar({ id: "b1" }), bar({ id: "b2", qty: 2, dvar: [24, 22, 23] })], { variantPerUnit: true }),
+      { product: SHIRT, variant: "21" },
+    );
+    page.click('[data-bar="b2"]');
+    // 24 is sold out → units get 22 and 23.
+    expect(page.submit()).toBe(true);
+    expect(page.added()?.items).toEqual([
+      { id: 22, quantity: 1, properties: { _cartlift: "d1", _cartlift_arm: "A" } },
+      { id: 23, quantity: 1, properties: { _cartlift: "d1", _cartlift_arm: "A" } },
+    ]);
+  });
+
+  test("the chosen variant sold out: the bar says so", () => {
+    const page = productPage(deal([bar({ id: "b1", selected: true })]), { product: SHIRT, variant: "24" });
+    expect(page.$(".cl-bar.is-soldout .cl-soldout")?.textContent).toBe("Sold out");
+  });
+});
+
+describe("Phase 1: upsells, placement, events", () => {
+  test("complementary products become upsell rows and are added with the upsell tag", async () => {
+    const recommendations = [
+      { id: 1, title: "Tee (itself)", variants: [{ id: 11, price: 2000, available: true }] },
+      { id: 7, title: "Cap", featured_image: "https://cdn/cap.png", variants: [{ id: 70, price: 1200, available: true }] },
+      { id: 8, title: "Sold out bag", variants: [{ id: 80, price: 900, available: false }] },
+      { id: 9, title: "Belt", variants: [{ id: 90, price: 1500, available: true }] },
+    ];
+    const upsell = { id: "u1", source: "complementary", limit: 1, variant: 0, title: "", image: null, price: null, text: "Add {{product}} for {{price}}", dt: "percentage", dv: 25, checked: true, onlyWhenSelected: false };
+    const page = productPage(deal([bar({ id: "b1", selected: true, upsells: [upsell] })]), { recommendations });
+    await page.settle();
+    expect(page.posts[0].url).toContain("recommendations/products.json?product_id=1&intent=complementary");
+    const rows = page.document.querySelectorAll(".cl-upsell");
+    expect(rows).toHaveLength(1);
+    expect(rows[0].textContent).toContain("Add Cap for $9.00");
+    expect(page.submit()).toBe(true);
+    expect(page.added()?.items).toContainEqual({ id: 70, quantity: 1, properties: { _cartlift_upsell: "d1:u1" } });
+  });
+
+  test("<cartlift-bundle> in the product form is used as the placement", () => {
+    const page = productPage(deal([bar({ id: "b1" })]), { inForm: '<cartlift-bundle product-id="1"></cartlift-bundle>' });
+    expect(page.$("cartlift-bundle .cl-block")).not.toBeNull();
+    expect(page.document.querySelectorAll(".cl-block")).toHaveLength(1);
+  });
+
+  test("variants-changed reports the lines and bundle price", () => {
+    const page = productPage(deal([bar({ id: "b1" }), bar({ id: "b2", qty: 3, dt: "percentage", dv: 20 })]));
+    page.click('[data-bar="b2"]');
+    const last = page.events.filter(([n]) => n === "cartlift:variants-changed").pop()?.[1];
+    expect(last).toEqual({ dealId: "d1", barId: "b2", variantIdQuantities: { 11: 3 }, price: 4800, formattedPrice: "$48.00" });
   });
 });
