@@ -8,6 +8,8 @@ export interface PricedBar {
   get?: number;
   dt: DiscountType;
   dv: number;
+  /** BXGY: extra percentage off what is left after the free items. */
+  xp?: number;
 }
 
 export interface BarPrice {
@@ -39,6 +41,8 @@ export function priceBar(bar: PricedBar, unit: number, compare = 0, rate = 1): B
     else if (bar.dt === "amount") each = Math.min(v * 100 * rate, unit);
     else each = Math.max(0, unit - v * 100 * rate);
     total = base - each * Math.max(0, get);
+    const extra = Math.min(100, Math.max(0, Number(bar.xp) || 0));
+    if (extra) total -= (total * extra) / 100;
   } else if (bar.dt === "percentage") {
     total = base * (1 - Math.min(v, 100) / 100);
   } else if (bar.dt === "amount") {

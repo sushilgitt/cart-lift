@@ -66,12 +66,17 @@ export function buildFunctionConfig(deals: Deal[]) {
       dt: bar.discountType,
       dv: bar.discountValue,
       m: discountMessage(bar, deal.name, config.discountName),
+      ...(bar.kind === "bxgy" && bar.extraPercent > 0 ? { xp: bar.extraPercent } : {}),
       ...(bar.gift ? { gift: bar.gift.id } : {}),
       ...(bar.upsells.length
         ? {
             ups: bar.upsells
-              .filter((u) => u.variant)
-              .map((u) => ({ id: u.id, v: u.variant!.id, dt: u.discountType, dv: u.discountValue })),
+              .filter((u) => u.source === "complementary" || u.variant)
+              .map((u) =>
+                u.source === "complementary"
+                  ? { id: u.id, c: 1, l: u.limit, dt: u.discountType, dv: u.discountValue }
+                  : { id: u.id, v: u.variant!.id, dt: u.discountType, dv: u.discountValue },
+              ),
           }
         : {}),
     }));

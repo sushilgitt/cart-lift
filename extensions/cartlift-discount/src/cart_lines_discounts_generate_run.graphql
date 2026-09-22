@@ -34,6 +34,10 @@ query CartInput($collectionIds: [ID!]) {
               collectionId
               isMember
             }
+            # Search & Discovery's complementary products, for complementary upsells.
+            complementary: metafield(namespace: "shopify--discovery--product_recommendation", key: "complementary_products") {
+              value
+            }
           }
         }
       }

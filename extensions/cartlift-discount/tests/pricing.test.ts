@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { cartLinesDiscountsGenerateRun, type FnConfig } from "../src/cart_lines_discounts_generate_run";
 import { DiscountClass } from "../generated/api";
+import { priceBar } from "../../../packages/core/src";
 
 type LineSpec = {
   id?: string;
@@ -14,6 +15,8 @@ type LineSpec = {
   gift?: string;
   upsell?: string;
   collections?: string[];
+  /** Search & Discovery complementary product GIDs of this line's product. */
+  complementary?: string[];
 };
 
 function input(config: FnConfig, lines: LineSpec[], rate = 1) {
@@ -39,6 +42,7 @@ function input(config: FnConfig, lines: LineSpec[], rate = 1) {
               collectionId: c,
               isMember: (l.collections ?? []).includes(c),
             })),
+            complementary: l.complementary ? { value: JSON.stringify(l.complementary) } : null,
           },
         },
       })),
@@ -280,5 +284,88 @@ describe("gifts and upsells", () => {
     // Fixed price $5 for an $8 upsell → $3 off.
     c = candidates(cartLinesDiscountsGenerateRun(input(withUp("fixed_total", 5), [{ qty: 1, price: 10 }, upsell])));
     expect(c[0].value).toEqual({ fixedAmount: { amount: 3 } });
+  });
+});
+
+describe("buy X get Y with an extra percentage", () => {
+  const deal = (xp: number): FnConfig => ({
+    deals: [
+      {
+        id: "d1",
+        tt: "ALL",
+        name: "B3G1",
+        bars: [{ id: "b1", q: 4, k: "x", g: 1, dt: "percentage", dv: 100, xp, m: "Buy 3 get 1 + 10%" }],
+      },
+    ],
+  });
+  const off = (c: { value: { fixedAmount?: { amount: number }; percentage?: { value: number } } }[], lines: { qty: number; price: number }[]) =>
+    c.reduce((sum, x, i) => sum + (x.value.fixedAmount?.amount ?? (lines[i].price * lines[i].qty * (x.value.percentage?.value ?? 0)) / 100), 0);
+
+  test("without it, output is the classic free-unit discount", () => {
+    const c = candidates(cartLinesDiscountsGenerateRun(input(deal(0), [{ qty: 4, price: 20 }])));
+    expect(c).toEqual([
+      { message: "Buy 3 get 1 + 10%", targets: [{ cartLine: { id: "gid://shopify/CartLine/1", quantity: 1 } }], value: { percentage: { value: 100 } } },
+    ]);
+  });
+
+  test("free unit plus 10% off the rest, as one amount per line — matching the widget price", () => {
+    const lines = [{ qty: 4, price: 20 }];
+    const c = candidates(cartLinesDiscountsGenerateRun(input(deal(10), lines)));
+    // 4 × $20 = $80; one free ($20) → $60; 10% off → $54. $26 off.
+    expect(c).toEqual([
+      { message: "Buy 3 get 1 + 10%", targets: [{ cartLine: { id: "gid://shopify/CartLine/1" } }], value: { fixedAmount: { amount: 26 } } },
+    ]);
+    const shown = priceBar({ kind: "bxgy", qty: 4, get: 1, dt: "percentage", dv: 100, xp: 10 }, 2000);
+    expect(shown.total).toBe(5400);
+  });
+
+  test("the cheapest unit is the free one across lines", () => {
+    const lines = [
+      { qty: 3, price: 30 },
+      { qty: 1, price: 10, variant: "gid://shopify/ProductVariant/9" },
+    ];
+    const c = candidates(cartLinesDiscountsGenerateRun(input(deal(10), lines)));
+    // $90 + $10; the $10 unit is free; 10% off $90 → $9. $19 off in total.
+    expect(Math.round(off(c, lines) * 100) / 100).toBe(19);
+  });
+});
+
+describe("complementary upsells", () => {
+  const config: FnConfig = {
+    deals: [
+      {
+        id: "d1",
+        tt: "PRODUCTS",
+        p: ["gid://shopify/Product/1"],
+        name: "Deal",
+        bars: [{ id: "b1", q: 1, k: "q", dt: "none", dv: 0, ups: [{ id: "u1", c: 1, l: 2, dt: "percentage", dv: 20 }] }],
+      },
+    ],
+  };
+  const main = { qty: 1, price: 10, complementary: ["gid://shopify/Product/7", "gid://shopify/Product/8"] };
+  const up = (product: number, qty = 1) => ({
+    qty,
+    price: 10,
+    product: `gid://shopify/Product/${product}`,
+    variant: `gid://shopify/ProductVariant/${product}0`,
+    upsell: "d1:u1",
+  });
+
+  test("discounts a product listed as complementary to a deal product in the cart", () => {
+    const c = candidates(cartLinesDiscountsGenerateRun(input(config, [main, up(7, 3)])));
+    expect(c).toEqual([{ message: "Deal", targets: [{ cartLine: { id: "gid://shopify/CartLine/2", quantity: 1 } }], value: { percentage: { value: 20 } } }]);
+  });
+
+  test("not a product that isn't complementary, nor when the list is missing", () => {
+    expect(candidates(cartLinesDiscountsGenerateRun(input(config, [main, up(500)])))).toHaveLength(0);
+    expect(candidates(cartLinesDiscountsGenerateRun(input(config, [{ qty: 1, price: 10 }, up(7)])))).toHaveLength(0);
+  });
+
+  test("at most `limit` different products, one unit each", () => {
+    const c = candidates(cartLinesDiscountsGenerateRun(input(config, [main, up(7), up(8), up(7)])));
+    expect(c.map((x: { targets: { cartLine: { id: string } }[] }) => x.targets[0].cartLine.id)).toEqual([
+      "gid://shopify/CartLine/2",
+      "gid://shopify/CartLine/3",
+    ]);
   });
 });

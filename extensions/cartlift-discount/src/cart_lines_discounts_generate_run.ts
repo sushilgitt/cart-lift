@@ -31,6 +31,12 @@ export interface FnUpsell {
   id: string;
   /** Variant GID the discount is bound to. Missing (old config) = no discount. */
   v?: string;
+  /**
+   * Complementary upsell: instead of one variant, any product Shopify lists as
+   * complementary to a deal product in the cart (Search & Discovery), up to `l`.
+   */
+  c?: 1;
+  l?: number;
   dt: DiscountType;
   dv: number;
 }
@@ -47,6 +53,8 @@ export interface FnBar {
   dv: number;
   /** Discount title shown in cart/checkout. */
   m?: string;
+  /** BXGY: extra percentage off on top of the free items. */
+  xp?: number;
   /** Free gift variant GID. */
   gift?: string;
   ups?: FnUpsell[];
@@ -109,6 +117,18 @@ export function barsFor(deal: FnDeal, arm: string): FnBar[] {
 
 const price = (line: Line) => Number(line.cost.amountPerQuantity.amount);
 
+/** Product GIDs Search & Discovery lists as complementary to this line's product. */
+function complementaryOf(line: Line): string[] {
+  const raw = productOf(line)?.product.complementary?.value;
+  if (!raw) return [];
+  try {
+    const ids = JSON.parse(raw);
+    return Array.isArray(ids) ? ids.filter((id): id is string => typeof id === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
 function quantityBreak(group: Group, bar: FnBar, rate: number, message: string): Candidate[] {
   const targets = group.lines.map((line) => ({ cartLine: { id: line.id } }));
   const value = Number(bar.dv) || 0;
@@ -137,11 +157,41 @@ function quantityBreak(group: Group, bar: FnBar, rate: number, message: string):
   return [];
 }
 
+/** Discount on one "Y" unit of a BXGY bar. */
+function yUnitOff(bar: FnBar, unit: number, rate: number): number {
+  const dv = Number(bar.dv) || 0;
+  if (bar.dt === "none") return unit;
+  if (bar.dt === "percentage") return (unit * Math.min(dv, 100)) / 100;
+  if (bar.dt === "amount") return Math.min(dv * rate, unit);
+  return Math.max(0, unit - dv * rate); // fixed price for each Y unit
+}
+
 function buyXGetY(group: Group, bar: FnBar, rate: number, message: string): Candidate[] {
   const get = Math.max(0, Math.floor(bar.g ?? 0));
   if (get <= 0 || bar.q <= get) return [];
   let free = Math.floor(group.units / bar.q) * get;
   if (free <= 0) return [];
+
+  const extra = Math.min(100, Math.max(0, Number(bar.xp) || 0));
+  if (extra > 0) {
+    // "Buy 3 get 4 + 10%": the Y units get their discount, then every line
+    // gets `extra` % off what is left. One amount per line, so nothing stacks.
+    const sorted = [...group.lines].sort((a, b) => price(a) - price(b));
+    const yUnits = new Map<string, number>();
+    for (const line of sorted) {
+      const qty = Math.min(free, line.quantity);
+      free -= qty;
+      yUnits.set(line.id, qty);
+    }
+    const out: Candidate[] = [];
+    for (const line of group.lines) {
+      const unit = price(line);
+      const yOff = yUnitOff(bar, unit, rate) * (yUnits.get(line.id) ?? 0);
+      const off = round2(yOff + ((unit * line.quantity - yOff) * extra) / 100);
+      if (off > 0) out.push({ message, targets: [{ cartLine: { id: line.id } }], value: { fixedAmount: { amount: off } } });
+    }
+    return out;
+  }
 
   // The cheapest units are the "Y" units, as in Shopify's native BXGY.
   const sorted = [...group.lines].sort((a, b) => price(a) - price(b));
@@ -268,11 +318,24 @@ export function cartLinesDiscountsGenerateRun(
     });
   }
 
+  // Products complementary to each deal's products in the cart (Search & Discovery).
+  const complementary = new Map<string, Set<string>>();
+  for (const group of groups.values()) {
+    if (!dealBars.has(group.deal.id)) continue;
+    const set = complementary.get(group.deal.id) ?? new Set<string>();
+    for (const line of group.lines) {
+      for (const id of complementaryOf(line)) set.add(id);
+    }
+    complementary.set(group.deal.id, set);
+  }
+
   // Upsells: `_cartlift_upsell=<dealId>:<upsellId>`. Discounted while the deal is in the cart.
   // Line properties are shopper-controlled, so the tag alone proves nothing: the line
-  // must be the upsell's own variant, and only one unit per deal and upsell is
-  // discounted (the widget adds one) — same rule as gifts.
+  // must be the upsell's own variant (or, for complementary upsells, a product Shopify
+  // lists as complementary to a deal product in the cart), and only one unit per
+  // upsell product is discounted (the widget adds one) — same rule as gifts.
   const upsellsUsed = new Set<string>();
+  const complementaryUsed = new Map<string, number>();
   for (const line of input.cart.lines) {
     const tag = line.upsell?.value;
     const variant = productOf(line);
@@ -282,12 +345,22 @@ export function cartLinesDiscountsGenerateRun(
     if (!deal || !dealBars.has(dealId)) continue;
     const allBars = [deal.bars, ...Object.values(deal.arms ?? {})].flat();
     const up = allBars.flatMap((b) => b.ups ?? []).find((u) => u.id === upsellId);
-    if (!up || !up.v || up.v !== variant.id) continue;
-    const key = `${dealId}|${upsellId}`;
-    if (upsellsUsed.has(key)) continue;
+    if (!up) continue;
+    let key: string;
+    if (up.c) {
+      if (!complementary.get(dealId)?.has(variant.product.id)) continue;
+      key = `${dealId}|${upsellId}|${variant.product.id}`;
+      const count = complementaryUsed.get(`${dealId}|${upsellId}`) ?? 0;
+      if (upsellsUsed.has(key) || count >= Math.max(1, up.l ?? 1)) continue;
+    } else {
+      if (!up.v || up.v !== variant.id) continue;
+      key = `${dealId}|${upsellId}`;
+      if (upsellsUsed.has(key)) continue;
+    }
     const value = upsellValue(up, line, rate);
     if (!value) continue;
     upsellsUsed.add(key);
+    if (up.c) complementaryUsed.set(`${dealId}|${upsellId}`, (complementaryUsed.get(`${dealId}|${upsellId}`) ?? 0) + 1);
     candidates.push({ message: deal.name, targets: [{ cartLine: { id: line.id, quantity: 1 } }], value });
   }
 

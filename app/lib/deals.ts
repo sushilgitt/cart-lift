@@ -29,6 +29,10 @@ export interface VariantRef extends ResourceRef {
 
 export interface Upsell {
   id: string;
+  /** "product": the picked variant. "complementary": Shopify's complementary products (Search & Discovery). */
+  source: "product" | "complementary";
+  /** Complementary: how many products to offer. */
+  limit: number;
   variant: VariantRef | null;
   text: string;
   discountType: DiscountType;
@@ -55,6 +59,33 @@ export interface Bar {
   gift: VariantRef | null;
   giftText: string;
   upsells: Upsell[];
+  /** Image shown on the bar (Shopify Files URL). */
+  image: { url: string; alt: string } | null;
+  /** Short callouts under the subtitle, e.g. "Free shipping". */
+  highlights: string[];
+  /** Variants pre-selected per unit (in order); only those of the viewed product apply. */
+  defaultVariants: VariantRef[];
+  /** BXGY: extra percentage off on top of the free items ("Buy 3 get 4 + 10%"). */
+  extraPercent: number;
+}
+
+export type VariantDisplay = "dropdown" | "swatch";
+export type SwatchSource = "color" | "image" | "variant_image";
+export type SwatchShape = "circle" | "rounded" | "square";
+
+export interface VariantStyle {
+  display: VariantDisplay;
+  source: SwatchSource;
+  shape: SwatchShape;
+  /** Swatch size in px. */
+  size: number;
+}
+
+/** A `{{name}}` text variable filled from a product metafield. */
+export interface MetafieldVar {
+  name: string;
+  namespace: string;
+  key: string;
 }
 
 export interface DealColors {
@@ -82,6 +113,9 @@ export interface DealStyle {
   useCompareAt: boolean;
   radius: number;
   titleSize: number;
+  /** Bar image size in px. */
+  imageSize: number;
+  variants: VariantStyle;
   colors: DealColors;
 }
 
@@ -92,6 +126,10 @@ export interface DealConfig {
   across: boolean;
   /** Pick a different variant for each unit. */
   variantPerUnit: boolean;
+  /** Show a variant picker on single-quantity bars (off = the theme's picker is used). */
+  showVariantPicker: boolean;
+  /** Up to 4 text variables filled from product metafields. */
+  metafieldVars: MetafieldVar[];
   /** Discount name in cart/checkout; empty = bar title. */
   discountName: string;
 }
@@ -138,6 +176,8 @@ export const DEFAULT_COLORS: DealColors = {
   blockTitle: "#1a1a1a",
 };
 
+export const DEFAULT_VARIANT_STYLE: VariantStyle = { display: "dropdown", source: "color", shape: "circle", size: 28 };
+
 export const DEFAULT_STYLE: DealStyle = {
   layout: "vertical",
   showBlockTitle: true,
@@ -146,6 +186,8 @@ export const DEFAULT_STYLE: DealStyle = {
   useCompareAt: false,
   radius: 10,
   titleSize: 15,
+  imageSize: 56,
+  variants: DEFAULT_VARIANT_STYLE,
   colors: DEFAULT_COLORS,
 };
 
@@ -174,6 +216,10 @@ export function newBar(partial: Partial<Bar> = {}): Bar {
     gift: null,
     giftText: "+ FREE gift",
     upsells: [],
+    image: null,
+    highlights: [],
+    defaultVariants: [],
+    extraPercent: 0,
     ...partial,
   };
 }
@@ -181,6 +227,8 @@ export function newBar(partial: Partial<Bar> = {}): Bar {
 export function newUpsell(partial: Partial<Upsell> = {}): Upsell {
   return {
     id: uid("u"),
+    source: "product",
+    limit: 1,
     variant: null,
     text: "Add {{product}} for {{price}}",
     discountType: "percentage",
@@ -243,9 +291,11 @@ export function templateBars(type: DealTypeKey): Bar[] {
 export function defaultConfig(type: DealTypeKey): DealConfig {
   return {
     bars: templateBars(type),
-    style: { ...DEFAULT_STYLE, colors: { ...DEFAULT_COLORS } },
+    style: { ...DEFAULT_STYLE, variants: { ...DEFAULT_VARIANT_STYLE }, colors: { ...DEFAULT_COLORS } },
     across: type === "BUNDLE",
     variantPerUnit: false,
+    showVariantPicker: true,
+    metafieldVars: [],
     discountName: "",
   };
 }
@@ -255,6 +305,16 @@ const num = (v: unknown, d: number) => {
   return Number.isFinite(n) ? n : d;
 };
 const str = (v: unknown, d = "") => (typeof v === "string" ? v : d);
+const oneOf = <T extends string>(v: unknown, options: readonly T[], d: T): T =>
+  options.includes(v as T) ? (v as T) : d;
+const strings = (v: unknown, max: number) =>
+  Array.isArray(v) ? v.filter((x): x is string => typeof x === "string").slice(0, max) : [];
+
+function normalizeImage(v: unknown): Bar["image"] {
+  const img = v as { url?: unknown; alt?: unknown } | null;
+  const url = str(img?.url);
+  return /^https:\/\//.test(url) ? { url, alt: str(img?.alt) } : null;
+}
 
 export function normalizeConfig(raw: unknown, type: DealTypeKey = "QUANTITY_BREAK"): DealConfig {
   const base = defaultConfig(type);
@@ -270,7 +330,19 @@ export function normalizeConfig(raw: unknown, type: DealTypeKey = "QUANTITY_BREA
             qty: Math.max(1, Math.floor(num(b?.qty, 1))),
             get: Math.max(0, Math.floor(num(b?.get, 0))),
             discountValue: Math.max(0, num(b?.discountValue, 0)),
-            upsells: Array.isArray(b?.upsells) ? b.upsells.map((u) => newUpsell(u)) : [],
+            upsells: Array.isArray(b?.upsells)
+              ? b.upsells.map((u) =>
+                  newUpsell({
+                    ...u,
+                    source: oneOf(u?.source, ["product", "complementary"] as const, "product"),
+                    limit: Math.min(4, Math.max(1, Math.floor(num(u?.limit, 1)))),
+                  }),
+                )
+              : [],
+            image: normalizeImage(b?.image),
+            highlights: strings(b?.highlights, 4),
+            defaultVariants: Array.isArray(b?.defaultVariants) ? b.defaultVariants.filter((v) => v?.id).slice(0, 20) : [],
+            extraPercent: Math.min(100, Math.max(0, num(b?.extraPercent, 0))),
           }),
         )
       : base.bars,
@@ -279,13 +351,33 @@ export function normalizeConfig(raw: unknown, type: DealTypeKey = "QUANTITY_BREA
       ...style,
       radius: num(style.radius, DEFAULT_STYLE.radius),
       titleSize: num(style.titleSize, DEFAULT_STYLE.titleSize),
+      imageSize: Math.min(160, Math.max(24, num(style.imageSize, DEFAULT_STYLE.imageSize))),
+      variants: {
+        display: oneOf(style.variants?.display, ["dropdown", "swatch"] as const, DEFAULT_VARIANT_STYLE.display),
+        source: oneOf(style.variants?.source, ["color", "image", "variant_image"] as const, DEFAULT_VARIANT_STYLE.source),
+        shape: oneOf(style.variants?.shape, ["circle", "rounded", "square"] as const, DEFAULT_VARIANT_STYLE.shape),
+        size: Math.min(64, Math.max(16, num(style.variants?.size, DEFAULT_VARIANT_STYLE.size))),
+      },
       colors: { ...DEFAULT_COLORS, ...(style.colors ?? {}) },
     },
     across: Boolean(r.across ?? base.across),
     variantPerUnit: Boolean(r.variantPerUnit),
+    // Deals saved before this option existed keep the theme's picker.
+    showVariantPicker: Boolean(r.showVariantPicker ?? false),
+    metafieldVars: Array.isArray(r.metafieldVars)
+      ? r.metafieldVars
+          .map((m) => ({ name: str(m?.name).trim(), namespace: str(m?.namespace).trim(), key: str(m?.key).trim() }))
+          .slice(0, 4)
+      : [],
     discountName: str(r.discountName),
   };
 }
+
+/** Variables every text field can use (see packages/widget/src/render.ts). */
+export const BUILT_IN_VARIABLES = [
+  "quantity", "buy", "get", "price", "full_price", "compare_price", "unit_price",
+  "saved_amount", "saved_percentage", "discount", "product",
+];
 
 const sameDiscount = (a: Bar, b: Bar) =>
   a.kind === b.kind &&
@@ -314,6 +406,18 @@ export function validateConfig(config: DealConfig): string[] {
   });
   if (config.bars.filter((b) => b.selected).length > 1)
     errors.push("Only one bar can be selected by default.");
+  config.bars.forEach((bar, i) => {
+    if (bar.upsells.some((u) => u.source === "product" && !u.variant))
+      errors.push(`Bar ${i + 1}: pick a product for each upsell.`);
+  });
+  const names = new Set<string>();
+  config.metafieldVars.forEach((m, i) => {
+    const n = `Metafield variable ${i + 1}`;
+    if (!/^[a-z][a-z0-9_]*$/.test(m.name)) errors.push(`${n}: the name must be lowercase letters, digits or _.`);
+    else if (BUILT_IN_VARIABLES.includes(m.name) || names.has(m.name)) errors.push(`${n}: {{${m.name}}} is already used.`);
+    names.add(m.name);
+    if (!m.namespace || !m.key) errors.push(`${n}: enter the metafield namespace and key.`);
+  });
   return errors;
 }
 
@@ -325,13 +429,13 @@ export { formatMoney, renderText, type BarPrice } from "../../packages/core/src"
 
 /** Prices an editor bar for a unit price in cents. `rate` converts shop-currency amounts. */
 export function priceBar(
-  bar: Pick<Bar, "kind" | "qty" | "get" | "discountType" | "discountValue">,
+  bar: Pick<Bar, "kind" | "qty" | "get" | "discountType" | "discountValue"> & Partial<Pick<Bar, "extraPercent">>,
   unitCents: number,
   compareCents = 0,
   rate = 1,
 ): BarPrice {
   return corePriceBar(
-    { kind: bar.kind, qty: bar.qty, get: bar.get, dt: bar.discountType, dv: bar.discountValue },
+    { kind: bar.kind, qty: bar.qty, get: bar.get, dt: bar.discountType, dv: bar.discountValue, xp: bar.extraPercent },
     unitCents,
     compareCents,
     rate,
@@ -376,6 +480,10 @@ export function storefrontBar(bar: Bar) {
     badge: bar.badge,
     badgeStyle: bar.badgeStyle,
     selected: bar.selected,
+    xp: bar.kind === "bxgy" ? bar.extraPercent : 0,
+    image: bar.image,
+    highlights: bar.highlights.filter((h) => h.trim()),
+    dvar: bar.defaultVariants.map((v) => Number(numericId(v.id))),
     gift: bar.gift
       ? {
           id: Number(numericId(bar.gift.id)),
@@ -386,13 +494,15 @@ export function storefrontBar(bar: Bar) {
         }
       : null,
     upsells: bar.upsells
-      .filter((u) => u.variant)
+      .filter((u) => u.source === "complementary" || u.variant)
       .map((u) => ({
         id: u.id,
-        variant: Number(numericId(u.variant!.id)),
-        title: u.variant!.productTitle || u.variant!.title,
-        image: u.variant!.image ?? null,
-        price: u.variant!.price ?? null,
+        source: u.source,
+        limit: u.limit,
+        variant: u.variant ? Number(numericId(u.variant.id)) : 0,
+        title: u.variant ? u.variant.productTitle || u.variant.title : "",
+        image: u.variant?.image ?? null,
+        price: u.variant?.price ?? null,
         text: u.text,
         dt: u.discountType,
         dv: u.discountValue,
@@ -415,6 +525,8 @@ export function storefrontDeal(deal: DealLike) {
     e: iso(deal.endsAt),
     across: config.across,
     variantPerUnit: config.variantPerUnit,
+    showVariantPicker: config.showVariantPicker,
+    mfv: config.metafieldVars.map((m) => m.name),
     style: config.style,
     bars: config.bars.map(storefrontBar),
   };
