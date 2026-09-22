@@ -1,5 +1,5 @@
 /*
- * CartLift cart watcher — keeps free gifts in step with the cart.
+ * CartLift cart watcher — keeps the cart tidy and free gifts in step with it.
  *
  * The product widget adds a gift when the shopper picks a gift bar, but a cart
  * can reach (or leave) a gift tier in other ways: adding the product twice,
@@ -9,7 +9,9 @@
  *  - adds a missing gift once its bar is reached,
  *  - removes a gift whose bar is no longer reached (it would be charged at
  *    full price otherwise),
- *  - keeps each gift at quantity 1, since only one unit is free.
+ *  - keeps each gift at quantity 1, since only one unit is free,
+ *  - merges a plain line into the CartLift line of the same variant (e.g. one
+ *    added from the widget, one from a collection page), like Kaching.
  *
  * Which bar a cart reaches is decided with the Discount Function's rules
  * (extensions/cartlift-discount), from the `cartlift/gifts` metafield
@@ -158,6 +160,43 @@
 
   API.plan = plan;
 
+  /**
+   * Plain lines (no properties, no selling plan) whose variant also has a
+   * CartLift-tagged line: move their quantity onto the tagged line.
+   * Checkout prices the same either way; the cart just shows one line.
+   *
+   * @returns { lineKey: newQuantity } for /cart/update.js (empty = nothing to do)
+   */
+  function mergePlan(cart) {
+    var items = (cart && cart.items) || [];
+    var updates = {};
+    var byVariant = {};
+    items.forEach(function (item) {
+      if (item.selling_plan_allocation) return;
+      var props = item.properties || {};
+      var entry = byVariant[item.variant_id] || (byVariant[item.variant_id] = { tagged: null, plain: [] });
+      var keys = Object.keys(props);
+      if (props._cartlift && !props._cartlift_gift && !props._cartlift_upsell) {
+        if (!entry.tagged) entry.tagged = item;
+      } else if (!keys.length) {
+        entry.plain.push(item);
+      }
+    });
+    Object.keys(byVariant).forEach(function (variantId) {
+      var entry = byVariant[variantId];
+      if (!entry.tagged || !entry.plain.length) return;
+      var total = Number(entry.tagged.quantity) || 0;
+      entry.plain.forEach(function (item) {
+        total += Number(item.quantity) || 0;
+        updates[item.key] = 0;
+      });
+      updates[entry.tagged.key] = total;
+    });
+    return updates;
+  }
+
+  API.mergePlan = mergePlan;
+
   // ---------------------------------------------------------------------------
   // Storefront runtime
   // ---------------------------------------------------------------------------
@@ -172,7 +211,7 @@
     }
   });
   var data = blobs[0];
-  if (!data || !data.config || !Array.isArray(data.config.deals) || !data.config.g) return;
+  if (!data || !data.config || !Array.isArray(data.config.deals) || !data.config.deals.length) return;
   if (/[?&]cartlift=off\b/.test(window.location.search)) return;
   if (typeof window.fetch !== "function" || typeof Promise === "undefined") return;
 
@@ -246,6 +285,16 @@
         if (!r.ok) throw new Error(json.description || json.message || "Cart request failed");
         return json;
       });
+    });
+  }
+
+  /** Merges duplicate lines first; resolves with the cart to plan gifts on. */
+  function merge(cart) {
+    var updates = mergePlan(cart);
+    if (!Object.keys(updates).length) return Promise.resolve({ cart: cart, changed: false });
+    return post("cart/update.js", { updates: updates }).then(function (next) {
+      // update.js answers with the whole cart.
+      return { cart: next, changed: true };
     });
   }
 
@@ -413,14 +462,19 @@
         return r.json();
       })
       .then(function (cart) {
-        return reconcile(cart).then(function (changed) {
-          if (!changed) return;
-          return nativeFetch(root + "cart.js", { credentials: "same-origin", headers: { Accept: "application/json" } })
-            .then(function (r) {
-              return r.json();
-            })
-            .then(refreshTheme);
+        return merge(cart).then(function (merged) {
+          return reconcile(merged.cart).then(function (changed) {
+            return changed || merged.changed;
+          });
         });
+      })
+      .then(function (changed) {
+        if (!changed) return;
+        return nativeFetch(root + "cart.js", { credentials: "same-origin", headers: { Accept: "application/json" } })
+          .then(function (r) {
+            return r.json();
+          })
+          .then(refreshTheme);
       })
       .catch(function (err) {
         console.warn("[CartLift]", err && err.message);

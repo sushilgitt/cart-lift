@@ -120,7 +120,8 @@ export function buildGiftConfig(deals: Deal[]) {
       })),
     };
   });
-  // `g` lets Liquid skip the watcher entirely when no deal has a gift.
+  // `g` (any gift) gated the watcher before it also merged lines; kept one
+  // release for theme assets still checking it.
   return { v: 1, g: out.some((d) => d.bars.some((b) => b.gift)), deals: out };
 }
 

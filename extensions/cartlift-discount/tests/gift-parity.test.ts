@@ -21,14 +21,16 @@ type Plan = {
 };
 type PlanFn = (config: unknown, cart: unknown, cols: Record<number, number[]>, skip?: Record<string, boolean>) => Plan | null;
 
-function loadWatcher(): PlanFn {
+type MergeFn = (cart: unknown) => Record<string, number>;
+
+function loadWatcher(): { plan: PlanFn; mergePlan: MergeFn } {
   const file = fileURLToPath(new URL("../../cartlift-widget/assets/cartlift-cart.js", import.meta.url));
   const window: Record<string, unknown> = {};
   const document = { querySelectorAll: () => [] };
   vm.runInNewContext(readFileSync(file, "utf8"), { window, document });
-  return (window.CartLiftCart as { plan: PlanFn }).plan;
+  return window.CartLiftCart as { plan: PlanFn; mergePlan: MergeFn };
 }
-const plan = loadWatcher();
+const { plan, mergePlan } = loadWatcher();
 
 // One deal definition, published both ways like app/lib/sync.server.ts does.
 interface DealSpec {
@@ -330,5 +332,84 @@ describe("cart watcher agrees with the Discount Function", () => {
     const config = giftConfig([giftDeal()]);
     const p = plan(config, ajaxCart([{ key: "a", product: 1, variant: 11, qty: 3 }]), {}, { [`d1|${GIFT}`]: true });
     expect(p!.adds).toEqual([]);
+  });
+});
+
+describe("merging duplicate lines", () => {
+  /** What the Function takes off the cart in total. */
+  function totalOff(deals: DealSpec[], lines: Line[]) {
+    const config = fnConfig(deals);
+    const result = cartLinesDiscountsGenerateRun({
+      presentmentCurrencyRate: "1",
+      cart: {
+        lines: lines.map((l) => ({
+          id: l.key,
+          quantity: l.qty,
+          cost: { amountPerQuantity: { amount: String(l.price ?? 20) } },
+          deal: l.deal ? { value: l.deal } : null,
+          arm: null,
+          bar: null,
+          gift: null,
+          upsell: null,
+          merchandise: {
+            __typename: "ProductVariant",
+            id: gid("ProductVariant", l.variant),
+            product: { id: gid("Product", l.product), inCollections: [] },
+          },
+        })),
+      },
+      discount: { discountClasses: [DiscountClass.Product], metafield: { jsonValue: config } },
+    } as never);
+    let off = 0;
+    for (const op of result.operations) {
+      for (const c of (op as { productDiscountsAdd?: { candidates: unknown[] } }).productDiscountsAdd?.candidates ?? []) {
+        const cand = c as { targets: { cartLine: { id: string } }[]; value: { percentage?: { value: number } } };
+        for (const t of cand.targets) {
+          const line = lines.find((l) => l.key === t.cartLine.id)!;
+          off += ((line.price ?? 20) * line.qty * (cand.value.percentage?.value ?? 0)) / 100;
+        }
+      }
+    }
+    return Math.round(off * 100) / 100;
+  }
+
+  const apply = (lines: Line[], updates: Record<string, number>) =>
+    lines.map((l) => (l.key in updates ? { ...l, qty: updates[l.key] } : l)).filter((l) => l.qty > 0);
+
+  test("moves a plain line onto the tagged line of the same variant; price unchanged", () => {
+    const lines: Line[] = [
+      { key: "t", product: 1, variant: 11, qty: 2, deal: "d1" },
+      { key: "p", product: 1, variant: 11, qty: 1 },
+    ];
+    const updates = mergePlan(ajaxCart(lines));
+    expect(updates).toEqual({ p: 0, t: 3 });
+    const merged = apply(lines, updates);
+    expect(merged).toHaveLength(1);
+    expect(totalOff([giftDeal()], merged)).toBe(totalOff([giftDeal()], lines));
+  });
+
+  test("leaves different variants, gift/upsell lines and other apps' lines alone", () => {
+    const cart = ajaxCart([
+      { key: "t", product: 1, variant: 11, qty: 2, deal: "d1" },
+      { key: "other-variant", product: 1, variant: 12, qty: 1 },
+      { key: "gift", product: 900, variant: 11, qty: 1, gift: "d1" },
+      { key: "upsell", product: 900, variant: 11, qty: 1, upsell: "d1:u1" },
+    ]);
+    // Another app's line property on the same variant.
+    cart.items.push({ key: "engraved", product_id: 1, variant_id: 11, quantity: 1, properties: { Engraving: "A" } } as never);
+    expect(mergePlan(cart)).toEqual({});
+  });
+
+  test("leaves subscription lines alone", () => {
+    const cart = ajaxCart([
+      { key: "t", product: 1, variant: 11, qty: 2, deal: "d1" },
+      { key: "sub", product: 1, variant: 11, qty: 1 },
+    ]);
+    (cart.items[1] as Record<string, unknown>).selling_plan_allocation = { selling_plan: { id: 1 } };
+    expect(mergePlan(cart)).toEqual({});
+  });
+
+  test("nothing to merge without a tagged line", () => {
+    expect(mergePlan(ajaxCart([{ key: "p", product: 1, variant: 11, qty: 3 }]))).toEqual({});
   });
 });
