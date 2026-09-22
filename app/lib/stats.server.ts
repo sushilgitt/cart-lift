@@ -4,14 +4,16 @@ import prisma from "../db.server";
 /**
  * Storefront analytics ingest.
  *
- * Views and add-to-carts come from the widget beacon; orders come from the web
- * pixel on checkout_completed. Everything lands in DailyStat (one row per
- * deal/arm/day). Orders are also written to DealOrder, whose unique key makes
- * pixel retries idempotent.
+ * Views and add-to-carts come from the widget beacon; checkouts and orders come
+ * from the web pixel (checkout_started / checkout_completed). Everything lands
+ * in DailyStat (one row per deal/arm/day). Checkouts and orders are also written
+ * to DealCheckout / DealOrder, whose unique keys make reloads and pixel retries
+ * count once.
  */
 
 export type IncomingEvent =
   | { t: "view" | "atc"; d: string; a?: string }
+  | { t: "checkout"; o: string; deals: { d: string; a?: string }[] }
   | {
       t: "order";
       o: string;
@@ -31,7 +33,7 @@ async function bump(
   shopId: string,
   dealId: string,
   a: string,
-  inc: Partial<Record<"views" | "addToCarts" | "orders" | "units", number>> & {
+  inc: Partial<Record<"views" | "addToCarts" | "checkouts" | "orders" | "units", number>> & {
     revenue?: number;
     addedRevenue?: number;
   },
@@ -59,6 +61,23 @@ export async function ingestEvents(domain: string, events: IncomingEvent[]) {
     if (event.t === "view" || event.t === "atc") {
       if (!known.has(event.d)) continue;
       await bump(shop.id, event.d, arm(event.a), event.t === "view" ? { views: 1 } : { addToCarts: 1 });
+      continue;
+    }
+
+    if (event.t === "checkout" && typeof event.o === "string" && Array.isArray(event.deals)) {
+      for (const line of event.deals.slice(0, 20)) {
+        if (!known.has(line.d)) continue;
+        try {
+          await prisma.dealCheckout.create({
+            data: { shopId: shop.id, dealId: line.d, token: event.o.slice(0, 100) },
+          });
+        } catch (error) {
+          // Same checkout reported again (reload, retry): already counted.
+          if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") continue;
+          throw error;
+        }
+        await bump(shop.id, line.d, arm(line.a), { checkouts: 1 });
+      }
       continue;
     }
 

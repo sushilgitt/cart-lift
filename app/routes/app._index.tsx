@@ -92,6 +92,7 @@ export default function Dashboard() {
           <Stat label="Visitors who saw a deal" value={String(d.total.views)} />
           <Stat label="Conversion rate" value={`${(d.rates.conversion * 100).toFixed(1)}%`} />
           <Stat label="Average order value" value={money(d.rates.aov)} />
+          <Stat label="Units per order" value={d.rates.unitsPerOrder.toFixed(2)} />
         </s-grid>
       </s-section>
 

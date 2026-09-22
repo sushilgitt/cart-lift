@@ -61,9 +61,10 @@ model Shop {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
-  deals  Deal[]
-  stats  DailyStat[]
-  orders DealOrder[]
+  deals     Deal[]
+  stats     DailyStat[]
+  orders    DealOrder[]
+  checkouts DealCheckout[]
 }
 
 enum DealStatus {
@@ -104,8 +105,9 @@ model Deal {
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
 
-  stats  DailyStat[]
-  orders DealOrder[]
+  stats     DailyStat[]
+  orders    DealOrder[]
+  checkouts DealCheckout[]
 
   @@index([shopId, status])
 }
@@ -121,6 +123,7 @@ model DailyStat {
   day          DateTime @db.Date
   views        Int      @default(0)
   addToCarts   Int      @default(0)
+  checkouts    Int      @default(0)
   orders       Int      @default(0)
   units        Int      @default(0)
   revenue      Decimal  @default(0) @db.Decimal(14, 2)
@@ -146,5 +149,20 @@ model DealOrder {
   createdAt    DateTime @default(now())
 
   @@unique([shopId, orderId, dealId])
+  @@index([shopId, createdAt])
+}
+
+// A started checkout that contained deal lines. Unique per checkout token so
+// reloads and pixel retries count once; feeds DailyStat.checkouts.
+model DealCheckout {
+  id        String   @id @default(cuid())
+  shopId    String
+  shop      Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  dealId    String
+  deal      Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  token     String
+  createdAt DateTime @default(now())
+
+  @@unique([shopId, token, dealId])
   @@index([shopId, createdAt])
 }

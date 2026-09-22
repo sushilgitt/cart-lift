@@ -21,14 +21,17 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
   const header = [
     "date", "deal_name", "variant", "currency", "visitors", "add_to_carts", "atc_rate_%",
-    "orders", "conversion_%", "units", "revenue", "added_revenue", "aov", "revenue_per_visitor",
+    "checkouts", "checkout_rate_%", "orders", "conversion_%", "units", "units_per_order",
+    "revenue", "added_revenue", "aov", "revenue_per_visitor",
   ];
   const lines = rows.map((r) => {
     const revenue = Number(r.revenue);
     return [
       r.day.toISOString().slice(0, 10), r.deal.name, r.arm, shop.currencyCode ?? "",
       r.views, r.addToCarts, r.views ? ((r.addToCarts / r.views) * 100).toFixed(2) : "0",
+      r.checkouts, r.views ? ((r.checkouts / r.views) * 100).toFixed(2) : "0",
       r.orders, r.views ? ((r.orders / r.views) * 100).toFixed(2) : "0", r.units,
+      r.orders ? (r.units / r.orders).toFixed(2) : "0",
       revenue.toFixed(2), Number(r.addedRevenue).toFixed(2),
       r.orders ? (revenue / r.orders).toFixed(2) : "0", r.views ? (revenue / r.views).toFixed(2) : "0",
     ].map(csv).join(",");

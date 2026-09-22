@@ -65,8 +65,10 @@ export default function Analytics() {
             ["Orders", String(d.total.orders)],
             ["Visitors", String(d.total.views)],
             ["Add-to-cart rate", pct(d.totalRates.atcRate)],
+            ["Checkout rate", pct(d.totalRates.checkoutRate)],
             ["Conversion", pct(d.totalRates.conversion)],
             ["AOV", money(d.totalRates.aov)],
+            ["Units per order", d.totalRates.unitsPerOrder.toFixed(2)],
             ["Revenue / visitor", money(d.totalRates.revenuePerVisitor)],
           ].map(([label, value]) => (
             <s-box key={label} padding="base" border="base" borderRadius="base">
@@ -111,6 +113,7 @@ export default function Analytics() {
               <s-table-header>Variant</s-table-header>
               <s-table-header format="numeric">Visitors</s-table-header>
               <s-table-header format="numeric">Add to cart</s-table-header>
+              <s-table-header format="numeric">Checkouts</s-table-header>
               <s-table-header format="numeric">Orders</s-table-header>
               <s-table-header format="numeric">Conversion</s-table-header>
               <s-table-header format="numeric">Revenue</s-table-header>
@@ -126,6 +129,7 @@ export default function Analytics() {
                   <s-table-cell>{r.arm}</s-table-cell>
                   <s-table-cell>{r.views}</s-table-cell>
                   <s-table-cell>{r.addToCarts}</s-table-cell>
+                  <s-table-cell>{r.checkouts}</s-table-cell>
                   <s-table-cell>{r.orders}</s-table-cell>
                   <s-table-cell>{pct(r.rates.conversion)}</s-table-cell>
                   <s-table-cell>{money(r.revenue)}</s-table-cell>

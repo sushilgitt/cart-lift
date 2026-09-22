@@ -3,6 +3,7 @@ import prisma from "../db.server";
 export interface Totals {
   views: number;
   addToCarts: number;
+  checkouts: number;
   orders: number;
   units: number;
   revenue: number;
@@ -15,11 +16,12 @@ export interface DealRow extends Totals {
   arm: string;
 }
 
-const empty = (): Totals => ({ views: 0, addToCarts: 0, orders: 0, units: 0, revenue: 0, addedRevenue: 0 });
+const empty = (): Totals => ({ views: 0, addToCarts: 0, checkouts: 0, orders: 0, units: 0, revenue: 0, addedRevenue: 0 });
 
 export function rates(t: Totals) {
   return {
     atcRate: t.views ? t.addToCarts / t.views : 0,
+    checkoutRate: t.views ? t.checkouts / t.views : 0,
     conversion: t.views ? t.orders / t.views : 0,
     aov: t.orders ? t.revenue / t.orders : 0,
     revenuePerVisitor: t.views ? t.revenue / t.views : 0,
@@ -43,6 +45,7 @@ export async function dealAnalytics(domain: string, from: Date, to: Date) {
     const add = (t: Totals) => {
       t.views += r.views;
       t.addToCarts += r.addToCarts;
+      t.checkouts += r.checkouts;
       t.orders += r.orders;
       t.units += r.units;
       t.revenue += Number(r.revenue);
