@@ -31,8 +31,8 @@ Legend: ✅ done · 🟡 partial · ❌ missing
 | Progressive gifts template *(template name unverified)* | 🟡 | A gift per bar works; no template or gift progress display |
 | Subscription template / per-deal subscription toggle | ❌ | Selling plans not supported |
 | Collection breaks — tiers apply however the product is added (widget, product form, collection page) | ✅ | Function counts untagged lines; gifts follow the cart (c9bb318) |
-| Collection breaks — merge duplicate variant lines into one | ❌ | |
-| Same quantity allowed on two bars only with the same discount | 🟡 | We reject any duplicate quantity |
+| Collection breaks — merge duplicate variant lines into one | ✅ | Cart watcher merges a plain line into the deal line |
+| Same quantity allowed on two bars only with the same discount | ✅ | Picked bar is tagged; its gift/message apply |
 | Additional % on top of BXGY ("Buy 3 get 4 + 10%") | ❌ | |
 
 ### 1.2 Bar settings
@@ -118,8 +118,8 @@ Legend: ✅ done · 🟡 partial · ❌ missing
 | Kaching (Analytics 2.0) | CartLift |
 |---|---|
 | Revenue, added revenue, bundle orders, visitors, CR, AOV, revenue/visitor, ATC, ATC rate | ✅ |
-| Units per transaction | 🟡 computed, not shown |
-| Checkout rate | ❌ |
+| Units per transaction | ✅ |
+| Checkout rate | ✅ |
 | Profit/visitor, profitability (needs product cost) | ❌ |
 | Subscribed count / subscription rate | ❌ |
 | Chart over time with comparison period + % change | 🟡 basic bars, no compare |
@@ -156,7 +156,8 @@ Rules for every phase:
 - Exit = feature checklist done + dry-run on Dawn + one non-Dawn theme +
   `npm run deploy` + Coolify redeploy.
 
-### Phase 0 — Align & harden (≈2 weeks) → ~52%
+### Phase 0 — Align & harden (≈2 weeks) → ~52%  ✅ released 2026-09-22 (cartlift-4, cartlift-5)
+Still open: 0.6 manual checks — POS on a device, storefront smoke on Dawn + one other theme.
 Make what exists behave exactly like Kaching before adding more.
 How each item is built: [`IMPLEMENTATION.md`](IMPLEMENTATION.md).
 - **Security:** bind upsell discounts to the configured product (today any
