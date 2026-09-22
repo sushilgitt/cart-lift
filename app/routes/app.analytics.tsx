@@ -4,11 +4,11 @@ import { useLoaderData, useNavigate, useSearchParams } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
-import { analytics, parseRange, PRESETS } from "../lib/analytics.server";
+import { analytics, parseRange } from "../lib/analytics.server";
 import { change, metrics } from "../../packages/core/src";
 import { formatMoney } from "../lib/deals";
 import { gql } from "../lib/shop.server";
-import { DEFAULT_COLUMNS, METRICS, TILE_METRICS, formatChange, formatMetric, type MetricKey } from "../lib/metric-defs";
+import { DEFAULT_COLUMNS, METRICS, PRESETS, TILE_METRICS, formatChange, formatMetric, type MetricKey } from "../lib/metric-defs";
 import { TrendChart } from "../components/TrendChart";
 
 const FEATURE_LABELS: Record<string, string> = {

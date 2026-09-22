@@ -2,6 +2,7 @@ import prisma from "../db.server";
 import { addTotals, emptyTotals, metrics, type Totals } from "../../packages/core/src";
 import { armConfig, normalizeConfig, type DealTypeKey } from "./deals";
 import { shopDay } from "./days";
+import { PRESETS } from "./metric-defs";
 
 /**
  * Analytics 2.0 queries: totals and a daily series for a date range and the
@@ -22,7 +23,7 @@ export interface Range {
   days: number;
 }
 
-export const PRESETS = [7, 30, 90] as const;
+
 
 /**
  * The selected range from `?days=7|30|90` or `?from=YYYY-MM-DD&to=YYYY-MM-DD`

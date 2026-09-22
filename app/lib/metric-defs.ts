@@ -2,6 +2,9 @@ import type { Metrics } from "../../packages/core/src";
 
 /** Labels and formats for the analytics metrics (client-safe). */
 
+/** Date-range presets, in days. */
+export const PRESETS = [7, 30, 90] as const;
+
 export type MetricKey = keyof Metrics;
 export type MetricKind = "money" | "count" | "percent" | "decimal";
 
