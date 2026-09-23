@@ -51,12 +51,20 @@ export async function backfillShopProfile(admin: AdminGraphql, domain: string) {
         currencyCode: string;
         ianaTimezone: string;
         currencyFormats: { moneyFormat: string };
+        plan: { partnerDevelopment: boolean };
       };
     }>(
       admin,
       `#graphql
         query cartliftShopProfile {
-          shop { name contactEmail currencyCode ianaTimezone currencyFormats { moneyFormat } }
+          shop {
+            name
+            contactEmail
+            currencyCode
+            ianaTimezone
+            currencyFormats { moneyFormat }
+            plan { partnerDevelopment }
+          }
         }`,
     );
     await prisma.shop.update({
@@ -67,6 +75,7 @@ export async function backfillShopProfile(admin: AdminGraphql, domain: string) {
         currencyCode: data.shop.currencyCode,
         moneyFormat: data.shop.currencyFormats.moneyFormat,
         timezone: data.shop.ianaTimezone,
+        devStore: Boolean(data.shop.plan?.partnerDevelopment),
       },
     });
   } catch (error) {

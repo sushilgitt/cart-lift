@@ -38,6 +38,10 @@ enum Plan {
   STARTER
   SCALE
   PRO
+  FLEX20
+  FLEX30
+  FLEX40
+  FLEX50
 }
 
 model Shop {
@@ -49,6 +53,8 @@ model Shop {
   moneyFormat    String?
   // IANA timezone (e.g. Europe/Berlin): analytics days follow the shop's clock.
   timezone       String?
+  // Partner development store: free, and never nagged about plan limits.
+  devStore       Boolean   @default(false)
   plan           Plan      @default(FREE)
   // GID of the single automatic app discount that runs the CartLift function.
   discountId     String?

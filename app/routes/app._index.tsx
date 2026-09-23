@@ -8,7 +8,7 @@ import { last30 } from "../lib/analytics.server";
 import { change } from "../../packages/core/src";
 import { formatChange } from "../lib/metric-defs";
 import { monthlyUsage } from "../lib/billing.server";
-import { planById } from "../lib/plans";
+import { planById, planFrom } from "../lib/plans";
 import { formatMoney } from "../lib/deals";
 import { useT } from "../lib/admin-i18n";
 
@@ -45,6 +45,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     moneyFormat: (shop.moneyFormat || "${{amount}}").replace(/<[^>]*>/g, ""),
     usage,
     plan: { name: plan.name, limit: plan.limit },
+    devStore: shop.devStore,
+    // The plan the merchant's own numbers call for, when they're over.
+    suggestedPlan: usage > plan.limit ? (planFrom(usage)?.name ?? null) : null,
   };
 };
 
@@ -110,18 +113,30 @@ export default function Dashboard() {
 
       <s-section slot="aside" heading={t("Plan usage")}>
         <s-stack gap="small-200">
-          <s-text>
-            {d.plan.name} plan: {money(d.usage)} of {money(d.plan.limit)} added revenue this month
-          </s-text>
-          <div style={{ height: 8, borderRadius: 4, background: "#e3e3e3", overflow: "hidden" }}>
-            <div style={{ width: `${usagePct}%`, height: "100%", background: usagePct >= 100 ? "#c70a24" : "#303030" }} />
-          </div>
-          {usagePct >= 80 ? (
-            <s-paragraph>
-              {usagePct >= 100 ? t("You've passed your plan's limit.") : t("You're close to your plan's limit.")} Your deals keep running.{" "}
-              <s-link href="/app/plans">{t("See plans")}</s-link>
-            </s-paragraph>
-          ) : null}
+          {d.devStore ? (
+            <s-text>{t("Development store — CartLift is free here, with no plan limit.")}</s-text>
+          ) : (
+            <>
+              <s-text>
+                {t("{{plan}} plan: {{usage}} of {{limit}} added revenue this month", {
+                  plan: d.plan.name,
+                  usage: money(d.usage),
+                  limit: money(d.plan.limit),
+                })}
+              </s-text>
+              <div style={{ height: 8, borderRadius: 4, background: "#e3e3e3", overflow: "hidden" }}>
+                <div style={{ width: `${usagePct}%`, height: "100%", background: usagePct >= 100 ? "#c70a24" : "#303030" }} />
+              </div>
+              {usagePct >= 80 ? (
+                <s-paragraph>
+                  {usagePct >= 100 ? t("You've passed your plan's limit.") : t("You're close to your plan's limit.")}{" "}
+                  {t("Your deals keep running.")}{" "}
+                  {d.suggestedPlan ? t("{{plan}} would cover this month.", { plan: d.suggestedPlan }) + " " : ""}
+                  <s-link href="/app/plans">{t("See plans")}</s-link>
+                </s-paragraph>
+              ) : null}
+            </>
+          )}
         </s-stack>
       </s-section>
 

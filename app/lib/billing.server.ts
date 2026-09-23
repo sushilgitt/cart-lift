@@ -36,7 +36,17 @@ export async function appHandle(admin: AdminGraphql): Promise<string> {
   return cachedHandle || process.env.SHOPIFY_APP_HANDLE || "cartlift-19";
 }
 
-const RANK: Record<Plan, number> = { FREE: 0, STARTER: 1, SCALE: 2, PRO: 3 };
+/** Bigger plan wins when a store somehow has two active subscriptions. */
+const RANK: Record<Plan, number> = {
+  FREE: 0,
+  STARTER: 1,
+  SCALE: 2,
+  PRO: 3,
+  FLEX20: 4,
+  FLEX30: 5,
+  FLEX40: 6,
+  FLEX50: 7,
+};
 
 /**
  * Maps a Partner-dashboard plan handle or name onto our Plan enum.

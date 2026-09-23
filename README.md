@@ -31,6 +31,27 @@ cd extensions/cartlift-discount && npx vitest run   # function tests
 | `CARTLIFT_AI_MODEL` | Short jobs (translation). Default `gpt-5.4-mini`. |
 | `CARTLIFT_AI_MODEL_BIG` | The assistant. Default `gpt-5.4`. |
 
+## Plans (Shopify managed pricing)
+Prices, trials and annual options live in the Partner dashboard; `app/lib/plans.ts`
+only mirrors them. Each plan needs a handle that matches, and an annual variant
+named `<handle>-annual`:
+
+| Handle | Price | Added revenue / month |
+|---|---|---|
+| `free` | $0 | $250 |
+| `starter` | $14.99 | $1,000 |
+| `scale` | $29.99 | $5,000 |
+| `pro` | $59.99 | $10,000 |
+| `flex-20k` | $99 | $20,000 |
+| `flex-30k` | $149 | $30,000 |
+| `flex-40k` | $199 | $40,000 |
+| `flex-50k` | $299 | $50,000 |
+
+Set a 7-day trial on every paid plan (`TRIAL_DAYS` in `plans.ts` only *says* 7).
+Development stores are free: `Shop.devStore` comes from `shop.plan.partnerDevelopment`
+and skips the limit and its banners. Going over a limit never pauses deals — the
+merchant is shown the plan that would cover the month.
+
 ## Deploy
 - App server: Coolify (Dockerfile build from `main`).
 - Extensions + app config: `npx shopify app deploy --allow-updates`.

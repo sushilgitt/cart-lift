@@ -1,0 +1,7 @@
+-- Higher plan tiers, and development stores (free, never nagged about limits).
+ALTER TYPE "Plan" ADD VALUE IF NOT EXISTS 'FLEX20';
+ALTER TYPE "Plan" ADD VALUE IF NOT EXISTS 'FLEX30';
+ALTER TYPE "Plan" ADD VALUE IF NOT EXISTS 'FLEX40';
+ALTER TYPE "Plan" ADD VALUE IF NOT EXISTS 'FLEX50';
+
+ALTER TABLE "Shop" ADD COLUMN IF NOT EXISTS "devStore" BOOLEAN NOT NULL DEFAULT false;

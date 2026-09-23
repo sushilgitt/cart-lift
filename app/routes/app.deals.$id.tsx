@@ -75,12 +75,14 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   const { admin, session } = await authenticate.admin(request);
   const shop = await prisma.shop.findUnique({
     where: { domain: session.shop },
-    select: { moneyFormat: true, currencyCode: true, settings: true },
+    select: { moneyFormat: true, currencyCode: true, settings: true, plan: true, devStore: true },
   });
   const moneyFormat = (shop?.moneyFormat || "${{amount}}").replace(/<[^>]*>/g, "");
   const palette = normalizePalette((shop?.settings as { brandPalette?: unknown } | null)?.brandPalette);
 
   const locales = await shopLocales(admin);
+  // A/B testing is a paid feature; development stores get everything.
+  const abAllowed = Boolean(shop?.devStore) || (shop?.plan ?? "FREE") !== "FREE";
 
   // Markets to limit a deal to (read_markets). Empty when the store has one market.
   let markets: { id: string; name: string }[] = [];
@@ -109,6 +111,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       palette,
       markets,
       locales,
+      abAllowed,
       isNew: true,
       moneyFormat,
       currency: shop?.currencyCode ?? "USD",
@@ -156,6 +159,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     palette,
     markets,
     locales,
+    abAllowed,
     isNew: false,
     moneyFormat,
     currency: shop?.currencyCode ?? "USD",
@@ -550,6 +554,7 @@ function DealEditor({ data }: { data: LoaderData }) {
       {!isNew ? (
         <AbTestPanel
           test={config.abTest}
+          allowed={data.abAllowed}
           results={data.ab}
           editing={armKey}
           onEdit={setArmKey}
@@ -1529,6 +1534,7 @@ type AbResults = LoaderData["ab"];
 
 function AbTestPanel({
   test,
+  allowed,
   results,
   editing,
   onEdit,
@@ -1537,6 +1543,8 @@ function AbTestPanel({
   snapshot,
 }: {
   test: DealConfig["abTest"];
+  /** A/B testing is on the paid plans; a test already running keeps running. */
+  allowed: boolean;
   results: AbResults;
   editing: ArmKey;
   onEdit: (key: ArmKey) => void;
@@ -1616,13 +1624,18 @@ function AbTestPanel({
           {keys.length > 1 && !running ? (
             <s-button onClick={() => onChange({ ...test, weights: even(keys) })}>{t("Split evenly")}</s-button>
           ) : null}
-          {keys.length > 1 && !running ? (
+          {keys.length > 1 && !running && allowed ? (
             <s-button
               variant="primary"
               onClick={() => onChange({ ...test, status: "running", startedAt: new Date().toISOString(), endedAt: null })}
             >
               {t("Start test")}
             </s-button>
+          ) : null}
+          {keys.length > 1 && !running && !allowed ? (
+            <s-text color="subdued">
+              {t("A/B testing is on the paid plans.")} <s-link href="/app/plans">{t("See plans")}</s-link>
+            </s-text>
           ) : null}
           {running ? (
             <s-button tone="critical" onClick={() => onChange({ ...test, status: "ended", endedAt: new Date().toISOString() })}>
