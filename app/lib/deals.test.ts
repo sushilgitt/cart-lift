@@ -1,5 +1,15 @@
 import { describe, expect, test } from "vitest";
-import { armConfig, liveArms, newBar, normalizeConfig, storefrontDeal, validateConfig } from "./deals";
+import {
+  armConfig,
+  liveArms,
+  newBar,
+  normalizeConfig,
+  normalizeStrings,
+  storefrontDeal,
+  translatableTexts,
+  translationFromTexts,
+  validateConfig,
+} from "./deals";
 
 const base = () => ({
   ...normalizeConfig(null),
@@ -42,5 +52,45 @@ describe("A/B test model", () => {
     expect(sf.arms?.map((a) => [a.key, a.weight, a.bars.map((b) => b.id)])).toEqual([["B", 50, ["x"]]]);
     const ended = normalizeConfig({ ...running, abTest: { ...running.abTest, status: "ended" } });
     expect(storefrontDeal(deal(ended))).not.toHaveProperty("arms");
+  });
+});
+
+describe("translations", () => {
+  const config = () =>
+    normalizeConfig({
+      ...base(),
+      style: { blockTitle: "BUNDLE & SAVE", savingsBar: { enabled: true, text: "You save {{saved_amount}}" } },
+      mixMatch: { enabled: true, pool: "visibility", modalTitle: "Pick", buttonText: "Add" },
+      bars: [
+        newBar({ id: "b1", title: "Single", subtitle: "Standard", highlights: ["Free shipping", "30-day returns"] }),
+        newBar({ id: "b2", qty: 2, title: "Duo", badge: "Popular", gifts: [{ id: "gid://shopify/ProductVariant/9", title: "Socks", productId: "p" }], giftText: "+ FREE gift" }),
+      ],
+    });
+
+  test("every translatable text, and back again", () => {
+    const texts = translatableTexts(config());
+    expect(Object.keys(texts)).toEqual([
+      "blockTitle", "savingsText", "modalTitle", "modalButton",
+      "bars.b1.title", "bars.b1.subtitle", "bars.b1.highlights.0", "bars.b1.highlights.1",
+      "bars.b2.title", "bars.b2.badge", "bars.b2.giftText",
+    ]);
+    const translated = translationFromTexts({
+      blockTitle: "SPAREN",
+      "bars.b1.title": "Einzeln",
+      "bars.b1.highlights.1": "30 Tage Rückgabe",
+      "bars.b2.giftText": "+ GRATIS Geschenk",
+      "upsells.u1": "Mütze",
+      "bars.b2.title": "",
+    });
+    expect(translated.blockTitle).toBe("SPAREN");
+    expect(translated.bars).toEqual({ b1: { title: "Einzeln", highlights: [undefined, "30 Tage Rückgabe"] }, b2: { giftText: "+ GRATIS Geschenk" } });
+    expect(translated.upsells).toEqual({ u1: "Mütze" });
+  });
+
+  test("normalizing keeps known languages and known string keys only", () => {
+    const c = normalizeConfig({ ...base(), translations: { de: { blockTitle: "X" }, "not a locale": { blockTitle: "Y" } } });
+    expect(Object.keys(c.translations)).toEqual(["de"]);
+    expect(normalizeStrings({ de: { each: "/ Stück", nonsense: "x", soldOut: "" } })).toEqual({ de: { each: "/ Stück" } });
+    expect(normalizeStrings({ de: {} })).toEqual({});
   });
 });

@@ -1,5 +1,5 @@
 import { escapeHtml as esc, formatMoney, moneyToCents, priceBar, priceBundle, priceMixed, renderText } from "../../core/src";
-import type { RenderCtx, RenderState, SfBar, SfDeal, SfGift, SfProduct, SfStyle, SfVariant } from "./types";
+import { DEFAULT_STRINGS, type RenderCtx, type RenderState, type SfBar, type SfDeal, type SfGift, type SfProduct, type SfStyle, type SfVariant } from "./types";
 import { optionNames, optionValues, valueAvailable, valueImage, variantValues } from "./variants";
 
 /** Renders deal bars to HTML. Shared by the storefront and the admin live preview. */
@@ -209,7 +209,7 @@ export const upsellOn = (entry: UpsellEntry, state: RenderState) =>
   state.upsells && has(state.upsells, entry.key) ? state.upsells[entry.key] : entry.checked;
 
 /** Progressive gifts: each tier's newly unlocked gifts, locked or unlocked for the selected bar. */
-function renderGiftTrack(deal: SfDeal, bars: SfBar[], state: RenderState): string {
+function renderGiftTrack(deal: SfDeal, bars: SfBar[], state: RenderState, ctx: RenderCtx): string {
   if (!deal.style?.giftTrack) return "";
   const tiers = bars.filter((b) => b.kind !== "bundle" && barGifts(b).length).sort((a, b) => a.qty - b.qty);
   if (!tiers.length) return "";
@@ -222,6 +222,7 @@ function renderGiftTrack(deal: SfDeal, bars: SfBar[], state: RenderState): strin
     fresh.forEach((g) => seen.add(g.id));
     if (!fresh.length) continue;
     const open = reached >= tier.qty;
+    const words = ctx.strings ?? DEFAULT_STRINGS;
     html +=
       '<li class="cl-gt-step' + (open ? " is-unlocked" : "") + '">' +
       '<span class="cl-gt-gifts">' +
@@ -233,7 +234,7 @@ function renderGiftTrack(deal: SfDeal, bars: SfBar[], state: RenderState): strin
         )
         .join("") +
       "</span>" +
-      '<span class="cl-gt-label">' + (open ? "Unlocked" : "Buy " + tier.qty) + "</span></li>";
+      '<span class="cl-gt-label">' + (open ? esc(words.unlocked) : text(words.buy, { quantity: tier.qty })) + "</span></li>";
   }
   return html + "</ol>";
 }
@@ -265,6 +266,7 @@ function renderSlots(
   fmt: (c: number) => string,
 ): string {
   const mm = deal.mm!;
+  const words = ctx.strings ?? DEFAULT_STRINGS;
   const photo = safeCss(mm.photo) ? Math.min(160, Math.max(24, Number(mm.photo))) : 64;
   let html = '<div class="cl-slots" style="--cl-slot-photo:' + photo + 'px">';
   for (let i = 0; i < slots; i++) {
@@ -278,13 +280,13 @@ function renderSlots(
         (pick?.image ? '<img class="cl-thumb" src="' + esc(pick.image) + '" alt="" loading="lazy">' : "") +
         '<span class="cl-extra-text">' + (mm.names === false ? "" : esc(title)) + "</span>" +
         '<span class="cl-extra-price">' + esc(fmt(price)) + "</span>" +
-        (i === 0 ? "" : '<button type="button" class="cl-slot-change" data-slot="' + i + '">' + esc(mm.button || "Choose") + "</button>") +
+        (i === 0 ? "" : '<button type="button" class="cl-slot-change" data-slot="' + i + '">' + esc(mm.button || words.choose) + "</button>") +
         "</div>";
     } else {
       html +=
         '<button type="button" class="cl-slot" data-slot="' + i + '">' +
         '<span class="cl-unit-no">#' + (i + 1) + "</span>" +
-        '<span class="cl-extra-text">' + esc(mm.button || "Choose") + "</span></button>";
+        '<span class="cl-extra-text">' + esc(mm.button || words.choose) + "</span></button>";
     }
   }
   return html + "</div>";
@@ -368,6 +370,7 @@ export function renderDeal(deal: SfDeal, state: RenderState, ctx: RenderCtx): st
   const compare = style.useCompareAt ? Number(variant.compare_at_price) || 0 : 0;
   const fmt = (cents: number) => formatMoney(cents, ctx.moneyFormat);
   const bars = state.bars || deal.bars;
+  const words = ctx.strings ?? DEFAULT_STRINGS;
   const layout = ["vertical", "horizontal", "grid", "plain"].indexOf(style.layout || "") >= 0 ? style.layout : "vertical";
   // Savings of the selected bar, for the savings bar.
   let savedTotal = 0;
@@ -386,7 +389,7 @@ export function renderDeal(deal: SfDeal, state: RenderState, ctx: RenderCtx): st
   }
   html += scopedCss(deal.id, style.customCss);
   if (style.htmlAbove) html += '<div class="cl-html cl-html--above">' + (ctx.preview ? sanitizeHtml(style.htmlAbove) : style.htmlAbove) + "</div>";
-  html += renderGiftTrack(deal, bars, state);
+  html += renderGiftTrack(deal, bars, state, ctx);
   html += '<div class="cl-bars" role="radiogroup">';
 
   bars.forEach((bar) => {
@@ -445,10 +448,11 @@ export function renderDeal(deal: SfDeal, state: RenderState, ctx: RenderCtx): st
     }
     html += "</div>";
     html += '<div class="cl-bar-prices">';
-    if (soldOut) html += '<span class="cl-soldout">Sold out</span>';
+    if (soldOut) html += '<span class="cl-soldout">' + esc(words.soldOut) + "</span>";
     html += '<span class="cl-price">' + esc(fmt(p.total)) + "</span>";
     if (p.full > p.total) html += '<span class="cl-full">' + esc(fmt(p.full)) + "</span>";
-    if (style.showUnitPrice && bar.qty > 1 && !bundle) html += '<span class="cl-unit">' + esc(fmt(p.unit)) + " / each</span>";
+    if (style.showUnitPrice && bar.qty > 1 && !bundle)
+      html += '<span class="cl-unit">' + esc(fmt(p.unit)) + " " + esc(words.each) + "</span>";
     html += "</div>";
 
     // Extras: bundle items, mix & match slots, variant pickers (selected bar only), gifts, upsells.
@@ -461,7 +465,7 @@ export function renderDeal(deal: SfDeal, state: RenderState, ctx: RenderCtx): st
       extras +=
         '<div class="cl-gift">' +
         (gift.image ? '<img class="cl-thumb" src="' + esc(gift.image) + '" alt="" loading="lazy">' : "") +
-        '<span class="cl-extra-text">' + text(gift.text || "+ FREE gift", vars) + " — " + esc(gift.title) + "</span>" +
+        '<span class="cl-extra-text">' + text(gift.text || words.freeGift, vars) + " — " + esc(gift.title) + "</span>" +
         '<span class="cl-extra-price">' + esc(fmt(0)) + (giftPrice ? "<s>" + esc(fmt(giftPrice)) + "</s>" : "") + "</span></div>";
     });
     if (selected) {

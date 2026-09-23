@@ -198,6 +198,50 @@ export interface SfOptionSwatches {
   values: { name: string; color: string | null; image: string | null }[];
 }
 
+/** The widget's own words for this page's language. */
+export interface SfStrings {
+  each: string;
+  soldOut: string;
+  unlocked: string;
+  buy: string;
+  freeGift: string;
+  choose: string;
+  search: string;
+  loading: string;
+  noProducts: string;
+  close: string;
+  addError: string;
+}
+
+export const DEFAULT_STRINGS: SfStrings = {
+  each: "/ each",
+  soldOut: "Sold out",
+  unlocked: "Unlocked",
+  buy: "Buy {{quantity}}",
+  freeGift: "+ FREE gift",
+  choose: "Choose",
+  search: "Search",
+  loading: "Loading…",
+  noProducts: "No products found.",
+  close: "Close",
+  addError: "Could not add to cart",
+};
+
+/** One language's texts, published as `cartlift/i18n_<locale>`. */
+export interface SfI18n {
+  strings?: Partial<SfStrings>;
+  deals?: Record<string, SfDealTranslation>;
+}
+
+export interface SfDealTranslation {
+  blockTitle?: string;
+  savingsText?: string;
+  modalTitle?: string;
+  modalButton?: string;
+  bars?: Record<string, { title?: string; subtitle?: string; label?: string; badge?: string; giftText?: string; highlights?: string[] }>;
+  upsells?: Record<string, string>;
+}
+
 /** One `script[data-cartlift-data]` block (snippets/cartlift-data.liquid). */
 export interface SfData {
   config: SfConfig;
@@ -211,6 +255,8 @@ export interface SfData {
   shop: string;
   /** The storefront's country (Shopify markets). */
   country?: string;
+  /** This page's language, when the merchant translated the deal. */
+  i18n?: SfI18n | null;
   placement: "auto" | "block";
 }
 
@@ -247,6 +293,8 @@ export interface RenderCtx {
   product: SfProduct;
   moneyFormat: string;
   rate: number;
+  /** The widget's own words (defaults when the page isn't translated). */
+  strings?: SfStrings;
   /** Admin preview: merchant HTML is shown without scripts. */
   preview?: boolean;
   options?: SfOptionSwatches[];

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs } from "react-router";
 import { useFetcher, useLoaderData } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
@@ -8,26 +8,35 @@ import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { syncShop } from "../lib/sync.server";
 import { blockDeepLink, embedDeepLink, embedStatus, themeSettings } from "../lib/theme.server";
-import { ColorField, TextArea } from "../components/fields";
+import { ColorField, Grid, Select, TextArea, TextField } from "../components/fields";
 import { paletteFromSettings } from "../lib/brand";
+import { shopLocales } from "../lib/locales.server";
+import { TranslateError, translateTexts } from "../lib/translate.server";
 import {
   BRAND_GROUPS,
   BRAND_LINKS,
+  DEFAULT_STRINGS,
   normalizeConfig,
   normalizePalette,
+  normalizeStrings,
   type BrandPalette,
   type DealTypeKey,
+  type WidgetStrings,
 } from "../lib/deals";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { admin, session } = await authenticate.admin(request);
   const shop = await prisma.shop.findUniqueOrThrow({ where: { domain: session.shop } });
-  const settings = (shop.settings ?? {}) as { customCss?: string; brandPalette?: unknown };
+  const settings = (shop.settings ?? {}) as { customCss?: string; brandPalette?: unknown; i18n?: unknown };
   const embed = await embedStatus(admin);
+  const locales = await shopLocales(admin);
   const apiKey = process.env.SHOPIFY_API_KEY || "";
   return {
     customCss: settings.customCss ?? "",
     palette: normalizePalette(settings.brandPalette),
+    locales,
+    strings: normalizeStrings(settings.i18n),
+    defaults: DEFAULT_STRINGS,
     embedEnabled: embed.enabled,
     themeName: embed.themeName ?? null,
     embedUrl: embedDeepLink(session.shop, apiKey),
@@ -63,6 +72,23 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       // Ignored: treated as an empty palette.
     }
     await saveSettings({ brandPalette: normalizePalette(raw) });
+  } else if (intent === "strings") {
+    let raw: unknown = null;
+    try {
+      raw = JSON.parse(String(form.get("strings") ?? "null"));
+    } catch {
+      // Ignored: treated as no strings.
+    }
+    await saveSettings({ i18n: normalizeStrings(raw) });
+  } else if (intent === "translate-strings") {
+    const language = String(form.get("language") ?? "");
+    try {
+      const translated = await translateTexts(DEFAULT_STRINGS as unknown as Record<string, string>, language);
+      return { ok: true, message: "Translated. Check the text, then save.", translated };
+    } catch (error) {
+      console.error("Auto-translate failed", error);
+      return { ok: false, message: error instanceof TranslateError ? error.message : "Translation failed.", translated: null };
+    }
   } else if (intent === "apply-brand") {
     // Link every deal's (and running variant's) colours to the palette.
     const deals = await prisma.deal.findMany({ where: { shopId: shop.id } });
@@ -133,6 +159,19 @@ export default function Settings() {
         </s-stack>
       </s-section>
 
+      {d.locales.length > 1 ? (
+        <WidgetText
+          key={JSON.stringify(d.strings)}
+          locales={d.locales}
+          initial={d.strings}
+          defaults={d.defaults}
+          translated={(fetcherData) => (fetcherData as { translated?: Record<string, string> } | undefined)?.translated ?? null}
+          submit={(data) => fetcher.submit(data, { method: "post" })}
+          result={fetcher.data}
+          busy={fetcher.state !== "idle"}
+        />
+      ) : null}
+
       <BrandColors
         key={JSON.stringify(d.palette)}
         initial={d.palette}
@@ -174,6 +213,80 @@ export default function Settings() {
         </s-stack>
       </s-section>
     </s-page>
+  );
+}
+
+/** The widget's own words per language ("/ each", "Sold out", …). */
+function WidgetText({
+  locales,
+  initial,
+  defaults,
+  translated,
+  submit,
+  result,
+  busy,
+}: {
+  locales: { locale: string; name: string; primary: boolean }[];
+  initial: Record<string, Partial<WidgetStrings>>;
+  defaults: WidgetStrings;
+  translated: (result: unknown) => Record<string, string> | null;
+  submit: (data: Record<string, string>) => void;
+  result: unknown;
+  busy: boolean;
+}) {
+  const others = locales.filter((l) => !l.primary);
+  const [locale, setLocale] = useState(others[0]?.locale ?? "");
+  const [strings, setStrings] = useState(initial);
+  const language = others.find((l) => l.locale === locale);
+  const current = strings[locale] ?? {};
+
+  // A finished auto-translation fills the fields; the merchant saves them.
+  const filled = useRef<unknown>(null);
+  useEffect(() => {
+    const values = translated(result);
+    if (!values || filled.current === result) return;
+    filled.current = result;
+    // The action's answer arrives as fetcher data; this is where it lands.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setStrings((s) => ({ ...s, [locale]: { ...s[locale], ...values } }));
+  }, [result, locale, translated]);
+
+  return (
+    <s-section heading="Widget text">
+      <s-stack gap="base">
+        <s-paragraph>
+          The words CartLift adds itself. Leave a field empty to keep the English text.
+        </s-paragraph>
+        <s-stack direction="inline" gap="base" alignItems="end">
+          <Select
+            label="Language"
+            value={locale}
+            onChange={setLocale}
+            options={others.map((l) => ({ value: l.locale, label: `${l.name} (${l.locale})` }))}
+          />
+          <s-button
+            loading={busy || undefined}
+            onClick={() => language && submit({ intent: "translate-strings", language: `${language.name} (${language.locale})` })}
+          >
+            Translate automatically
+          </s-button>
+          <s-button variant="primary" onClick={() => submit({ intent: "strings", strings: JSON.stringify(strings) })}>
+            Save text
+          </s-button>
+        </s-stack>
+        <Grid>
+          {(Object.keys(defaults) as (keyof WidgetStrings)[]).map((key) => (
+            <TextField
+              key={key}
+              label={defaults[key]}
+              value={current[key] ?? ""}
+              placeholder={defaults[key]}
+              onChange={(value) => setStrings((s) => ({ ...s, [locale]: { ...s[locale], [key]: value } }))}
+            />
+          ))}
+        </Grid>
+      </s-stack>
+    </s-section>
   );
 }
 

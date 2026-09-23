@@ -10,7 +10,8 @@ import {
   upsellEntries,
   upsellOn,
 } from "./render";
-import type { MixPick, RenderState, SfArm, SfBar, SfData, SfDeal, SfMixMatch, SfProduct, SfRecommended } from "./types";
+import { DEFAULT_STRINGS, type MixPick, type RenderState, type SfArm, type SfBar, type SfData, type SfDeal, type SfMixMatch, type SfProduct, type SfRecommended, type SfStrings } from "./types";
+import { stringsFor, translateDeal } from "./i18n";
 import { withOption } from "./variants";
 
 /*
@@ -152,7 +153,7 @@ interface DawnDrawer extends HTMLElement {
   renderContents(state: unknown): void;
 }
 
-function addLines(items: CartLine[]): Promise<void> {
+function addLines(items: CartLine[], addError: string): Promise<void> {
   const drawer = (document.querySelector("cart-drawer") || document.querySelector("cart-notification")) as DawnDrawer | null;
   const body: Record<string, unknown> = { items };
   const canRender =
@@ -168,7 +169,7 @@ function addLines(items: CartLine[]): Promise<void> {
   })
     .then((r) =>
       r.json().then((json) => {
-        if (!r.ok) throw new Error(json.description || json.message || "Could not add to cart");
+        if (!r.ok) throw new Error(json.description || json.message || addError);
         return json;
       }),
     )
@@ -268,7 +269,13 @@ function loadPool(mm: SfMixMatch): Promise<PoolProduct[]> {
 }
 
 /** The chooser dialog. Styled with the widget's colours (copied from `from`). */
-function openChooser(mm: SfMixMatch, moneyFormat: string, from: HTMLElement, onPick: (pick: MixPick) => void) {
+function openChooser(
+  mm: SfMixMatch,
+  moneyFormat: string,
+  words: SfStrings,
+  from: HTMLElement,
+  onPick: (pick: MixPick) => void,
+) {
   const trigger = document.activeElement as HTMLElement | null;
   const backdrop = document.createElement("div");
   backdrop.className = "cl-modal-backdrop";
@@ -276,10 +283,10 @@ function openChooser(mm: SfMixMatch, moneyFormat: string, from: HTMLElement, onP
   const photo = Math.min(160, Math.max(24, Number(mm.photo) || 64));
   backdrop.innerHTML =
     '<div class="cl-modal" role="dialog" aria-modal="true" aria-labelledby="cl-modal-title" style="--cl-slot-photo:' + photo + 'px">' +
-    '<div class="cl-modal-head"><h2 id="cl-modal-title">' + esc(mm.title || "Choose") + "</h2>" +
-    '<button type="button" class="cl-modal-close" aria-label="Close">&times;</button></div>' +
-    '<input class="cl-modal-search" type="search" placeholder="Search" aria-label="Search products">' +
-    '<div class="cl-modal-list" aria-busy="true"><p class="cl-modal-note">Loading…</p></div></div>';
+    '<div class="cl-modal-head"><h2 id="cl-modal-title">' + esc(mm.title || words.choose) + "</h2>" +
+    '<button type="button" class="cl-modal-close" aria-label="' + esc(words.close) + '">&times;</button></div>' +
+    '<input class="cl-modal-search" type="search" placeholder="' + esc(words.search) + '" aria-label="' + esc(words.search) + '">' +
+    '<div class="cl-modal-list" aria-busy="true"><p class="cl-modal-note">' + esc(words.loading) + "</p></div></div>";
   document.body.appendChild(backdrop);
   const list = backdrop.querySelector<HTMLElement>(".cl-modal-list")!;
   const search = backdrop.querySelector<HTMLInputElement>(".cl-modal-search")!;
@@ -313,11 +320,11 @@ function openChooser(mm: SfMixMatch, moneyFormat: string, from: HTMLElement, onP
                   variants.map((v) => '<option value="' + v.id + '">' + esc(v.title) + " — " + esc(formatMoney(v.price, moneyFormat)) + "</option>").join("") +
                   "</select>"
                 : '<span class="cl-pick-price">' + esc(formatMoney(first.price, moneyFormat)) + "</span>") +
-              '<button type="button" class="cl-pick-add">' + esc(mm.button || "Choose") + "</button></div>"
+              '<button type="button" class="cl-pick-add">' + esc(mm.button || words.choose) + "</button></div>"
             );
           })
           .join("")
-      : '<p class="cl-modal-note">No products found.</p>';
+      : '<p class="cl-modal-note">' + esc(words.noProducts) + "</p>";
   };
 
   backdrop.addEventListener("click", (e) => {
@@ -361,9 +368,12 @@ function armDeal(deal: SfDeal, arm: SfArm): SfDeal {
 
 function mount(container: HTMLElement, base: SfDeal, data: SfData, form: HTMLFormElement) {
   const rate = Number(shopify()?.currency?.rate) || 1;
-  const ctx = { product: data.product, moneyFormat: data.moneyFormat, rate, options: data.options, mf: data.mf };
-  const arm = pickArm(base);
-  const deal = armDeal(base, arm);
+  // This page's language: the widget's own words, and the deal's texts.
+  const words = stringsFor(data.i18n);
+  const ctx = { product: data.product, moneyFormat: data.moneyFormat, rate, options: data.options, mf: data.mf, strings: words };
+  const translated = translateDeal(base, data.i18n);
+  const arm = pickArm(translated);
+  const deal = armDeal(translated, arm);
   const idInput = form.querySelector<HTMLInputElement>('[name="id"]');
   const firstBar = initialBar(arm.bars);
   const state: RenderState & { bars: SfArm["bars"] } = {
@@ -531,7 +541,7 @@ function mount(container: HTMLElement, base: SfDeal, data: SfData, form: HTMLFor
     if (slot && deal.mm) {
       e.preventDefault();
       const index = Number(slot.dataset.slot);
-      openChooser(deal.mm, data.moneyFormat, container.querySelector(".cl-block") || container, (pick) => {
+      openChooser(deal.mm, data.moneyFormat, words, container.querySelector(".cl-block") || container, (pick) => {
         state.mix = { ...state.mix, [index]: pick };
         draw();
         emit("cartlift:variant-selected", { unit: index, variantId: pick.variantId });
@@ -591,7 +601,7 @@ function mount(container: HTMLElement, base: SfDeal, data: SfData, form: HTMLFor
       e.stopImmediatePropagation();
       if (busy) return;
       busy = true;
-      addLines(items).finally(() => {
+      addLines(items, words.addError).finally(() => {
         busy = false;
       });
     },

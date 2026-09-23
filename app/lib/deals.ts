@@ -128,6 +128,49 @@ export interface VariantStyle {
   size: number;
 }
 
+/**
+ * The widget's own words, translated per language. Deal texts are translated
+ * with the deal (DealConfig.translations).
+ */
+export interface WidgetStrings {
+  each: string;
+  soldOut: string;
+  unlocked: string;
+  /** "Buy {{quantity}}" on locked gift tiers. */
+  buy: string;
+  freeGift: string;
+  choose: string;
+  search: string;
+  loading: string;
+  noProducts: string;
+  close: string;
+  addError: string;
+}
+
+export const DEFAULT_STRINGS: WidgetStrings = {
+  each: "/ each",
+  soldOut: "Sold out",
+  unlocked: "Unlocked",
+  buy: "Buy {{quantity}}",
+  freeGift: "+ FREE gift",
+  choose: "Choose",
+  search: "Search",
+  loading: "Loading…",
+  noProducts: "No products found.",
+  close: "Close",
+  addError: "Could not add to cart",
+};
+
+/** One language's texts for a deal. Keys are bar / upsell ids. */
+export interface DealTranslation {
+  blockTitle?: string;
+  savingsText?: string;
+  modalTitle?: string;
+  modalButton?: string;
+  bars?: Record<string, { title?: string; subtitle?: string; label?: string; badge?: string; giftText?: string; highlights?: string[] }>;
+  upsells?: Record<string, string>;
+}
+
 /** A `{{name}}` text variable filled from a product metafield. */
 export interface MetafieldVar {
   name: string;
@@ -232,6 +275,8 @@ export interface DealConfig {
   metafieldVars: MetafieldVar[];
   /** Markets the deal runs in (empty = all). */
   markets: ResourceRef[];
+  /** Deal texts per language ("de", "fr-CA"). */
+  translations: Record<string, DealTranslation>;
   /** A bar also gets the gifts of every smaller bar. */
   progressiveGifts: boolean;
   mixMatch: MixMatch;
@@ -575,6 +620,7 @@ export function defaultConfig(type: DealTypeKey): DealConfig {
     showVariantPicker: true,
     metafieldVars: [],
     markets: [],
+    translations: {},
     progressiveGifts: false,
     mixMatch: { ...DEFAULT_MIX_MATCH },
     abTest: { ...DEFAULT_AB_TEST, weights: { A: 100 }, arms: {} },
@@ -651,6 +697,103 @@ export function armConfig(config: DealConfig, arm: string): DealConfig {
 export function liveArms(config: DealConfig): ArmKey[] {
   if (config.abTest.status !== "running") return ["A"];
   return ["A", ...(Object.keys(config.abTest.arms) as ArmKey[])];
+}
+
+const LOCALE = /^[a-z]{2}(-[A-Za-z]{2,4})?$/;
+
+function normalizeTranslations(raw: unknown): Record<string, DealTranslation> {
+  if (!raw || typeof raw !== "object") return {};
+  const out: Record<string, DealTranslation> = {};
+  for (const [locale, value] of Object.entries(raw as Record<string, unknown>).slice(0, 25)) {
+    if (!LOCALE.test(locale) || !value || typeof value !== "object") continue;
+    const t = value as DealTranslation;
+    const bars: DealTranslation["bars"] = {};
+    for (const [barId, fields] of Object.entries(t.bars ?? {}).slice(0, 20)) {
+      if (!fields || typeof fields !== "object") continue;
+      bars[barId] = {
+        title: str(fields.title) || undefined,
+        subtitle: str(fields.subtitle) || undefined,
+        label: str(fields.label) || undefined,
+        badge: str(fields.badge) || undefined,
+        giftText: str(fields.giftText) || undefined,
+        highlights: Array.isArray(fields.highlights) ? strings(fields.highlights, 4) : undefined,
+      };
+    }
+    const upsells: Record<string, string> = {};
+    for (const [id, text] of Object.entries(t.upsells ?? {}).slice(0, 20)) if (str(text)) upsells[id] = str(text);
+    out[locale] = {
+      blockTitle: str(t.blockTitle) || undefined,
+      savingsText: str(t.savingsText) || undefined,
+      modalTitle: str(t.modalTitle) || undefined,
+      modalButton: str(t.modalButton) || undefined,
+      bars,
+      upsells,
+    };
+  }
+  return out;
+}
+
+/** The shop's widget strings per language (Shop.settings.i18n). */
+export function normalizeStrings(raw: unknown): Record<string, Partial<WidgetStrings>> {
+  if (!raw || typeof raw !== "object") return {};
+  const out: Record<string, Partial<WidgetStrings>> = {};
+  for (const [locale, value] of Object.entries(raw as Record<string, unknown>).slice(0, 25)) {
+    if (!LOCALE.test(locale) || !value || typeof value !== "object") continue;
+    const own: Partial<WidgetStrings> = {};
+    for (const key of Object.keys(DEFAULT_STRINGS) as (keyof WidgetStrings)[]) {
+      const text = str((value as Record<string, unknown>)[key]).slice(0, 200);
+      if (text) own[key] = text;
+    }
+    if (Object.keys(own).length) out[locale] = own;
+  }
+  return out;
+}
+
+/** Every text of a deal that can be translated, as { key: source }. */
+export function translatableTexts(config: DealConfig): Record<string, string> {
+  const out: Record<string, string> = {};
+  const add = (key: string, value: string) => {
+    if (value && value.trim()) out[key] = value;
+  };
+  add("blockTitle", config.style.blockTitle);
+  if (config.style.savingsBar.enabled) add("savingsText", config.style.savingsBar.text);
+  if (config.mixMatch.enabled) {
+    add("modalTitle", config.mixMatch.modalTitle);
+    add("modalButton", config.mixMatch.buttonText);
+  }
+  for (const bar of config.bars) {
+    add(`bars.${bar.id}.title`, bar.title);
+    add(`bars.${bar.id}.subtitle`, bar.subtitle);
+    add(`bars.${bar.id}.label`, bar.label);
+    add(`bars.${bar.id}.badge`, bar.badge);
+    if (bar.gifts.length) add(`bars.${bar.id}.giftText`, bar.giftText);
+    bar.highlights.forEach((h, i) => add(`bars.${bar.id}.highlights.${i}`, h));
+    for (const up of bar.upsells) add(`upsells.${up.id}`, up.text);
+  }
+  return out;
+}
+
+/** Turns { "bars.b1.title": "…" } back into a DealTranslation. */
+export function translationFromTexts(texts: Record<string, string>): DealTranslation {
+  const out: DealTranslation = { bars: {}, upsells: {} };
+  for (const [key, value] of Object.entries(texts)) {
+    if (!value?.trim()) continue;
+    const parts = key.split(".");
+    if (parts[0] === "bars" && parts.length >= 3) {
+      const bar = (out.bars![parts[1]] ||= {});
+      if (parts[2] === "highlights" && parts[3] != null) {
+        bar.highlights = bar.highlights ?? [];
+        bar.highlights[Number(parts[3])] = value;
+      } else {
+        (bar as Record<string, unknown>)[parts[2]] = value;
+      }
+    } else if (parts[0] === "upsells" && parts[1]) {
+      out.upsells![parts[1]] = value;
+    } else {
+      (out as Record<string, unknown>)[key] = value;
+    }
+  }
+  return out;
 }
 
 function normalizeImage(v: unknown): Bar["image"] {
@@ -757,6 +900,7 @@ export function normalizeConfig(raw: unknown, type: DealTypeKey = "QUANTITY_BREA
           .slice(0, 4)
       : [],
     markets: refs(r.markets, 50),
+    translations: normalizeTranslations(r.translations),
     discountName: str(r.discountName),
   };
 }

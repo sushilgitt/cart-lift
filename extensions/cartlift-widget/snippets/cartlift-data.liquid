@@ -5,6 +5,10 @@
   `mf` the product metafields that deals use as text variables.
 {%- endcomment -%}
 {%- assign cl_config = app.metafields.cartlift.deals.value -%}
+{%- comment -%} Texts for this page's language, if the merchant translated them. {%- endcomment -%}
+{%- assign cl_locale = request.locale.iso_code | downcase | replace: '-', '_' -%}
+{%- assign cl_i18n_key = 'i18n_' | append: cl_locale -%}
+{%- assign cl_i18n = app.metafields.cartlift[cl_i18n_key].value -%}
 {%- if cl_config and product -%}
 <script type="application/json" data-cartlift-data="{{ product.id }}">
   {
@@ -33,6 +37,7 @@
     "moneyFormat": {{ shop.money_format | json }},
     "shop": {{ shop.permanent_domain | json }},
     "country": {{ localization.country.iso_code | json }},
+    "i18n": {%- if cl_i18n -%}{{ cl_i18n | json }}{%- else -%}null{%- endif -%},
     "placement": {{ placement | json }}
   }
 </script>

@@ -573,3 +573,43 @@ describe("Phase 5: markets", () => {
     expect(productPage(euOnly).$(".cl-block")).toBeNull();
   });
 });
+
+describe("Phase 5: translations", () => {
+  const i18n = {
+    strings: { each: "/ Stück", soldOut: "Ausverkauft", freeGift: "+ GRATIS" },
+    deals: {
+      d1: {
+        blockTitle: "SPAREN",
+        savingsText: "Du sparst {{saved_amount}}",
+        bars: { b2: { title: "Doppelpack", subtitle: "Spare {{saved_percentage}}", giftText: "+ GRATIS Geschenk" } },
+        upsells: { u1: "Mütze dazu" },
+      },
+    },
+  };
+  const gift = { id: 91, title: "Socken", image: null, price: "5.00", text: "+ FREE gift" };
+  const upsell = { id: "u1", variant: 777, title: "Cap", image: null, price: "10.00", text: "Add a cap", dt: "percentage", dv: 50, checked: false, onlyWhenSelected: false };
+  const translatable = deal(
+    [bar({ id: "b1", title: "Single" }), bar({ id: "b2", qty: 2, dt: "percentage", dv: 10, selected: true, title: "Duo", subtitle: "Save {{saved_percentage}}", gifts: [gift], upsells: [upsell] })],
+    { style: { layout: "vertical", showUnitPrice: true, blockTitle: "BUNDLE & SAVE", showBlockTitle: true, savingsBar: { enabled: true, text: "You save {{saved_amount}}", includeGifts: false, background: "#eee", textColor: "#111", valueColor: "#0a0", border: false, icon: false, align: "center", size: 14 } } },
+  );
+
+  test("the page's language replaces deal texts and the widget's own words", () => {
+    const page = productPage(translatable, { extra: { i18n } });
+    expect(page.$(".cl-heading span")?.textContent).toBe("SPAREN");
+    expect(page.$(".cl-bar.is-selected .cl-bar-title")?.textContent).toBe("Doppelpack");
+    expect(page.$(".cl-bar.is-selected .cl-bar-sub")?.textContent).toBe("Spare 10%");
+    expect(page.$(".cl-unit")?.textContent).toBe("$18.00 / Stück");
+    expect(page.$(".cl-gift .cl-extra-text")?.textContent).toBe("+ GRATIS Geschenk — Socken");
+    expect(page.$(".cl-upsell .cl-extra-text")?.textContent).toBe("Mütze dazu");
+    expect(page.$(".cl-savings")?.textContent).toBe("Du sparst $4.00");
+    // Untranslated texts keep their own language.
+    expect(page.$('[data-bar="b1"] .cl-bar-title')?.textContent).toBe("Single");
+  });
+
+  test("no translation for this page: everything stays as written", () => {
+    const page = productPage(translatable);
+    expect(page.$(".cl-heading span")?.textContent).toBe("BUNDLE & SAVE");
+    expect(page.$(".cl-unit")?.textContent).toBe("$18.00 / each");
+    expect(page.$(".cl-savings")?.textContent).toBe("You save $4.00");
+  });
+});

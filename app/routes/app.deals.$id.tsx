@@ -7,6 +7,8 @@ import prisma from "../db.server";
 import { authenticate } from "../shopify.server";
 import { getDeal, nextPriority, parseDealInput, shopIdFor } from "../lib/deal.server";
 import { gql } from "../lib/shop.server";
+import { TranslateError, translateTexts } from "../lib/translate.server";
+import { shopLocales } from "../lib/locales.server";
 import { syncShop } from "../lib/sync.server";
 import { abResult, MIN_ORDERS_PER_ARM } from "../../packages/core/src";
 import {
@@ -18,6 +20,8 @@ import {
   PRESET_THEMES,
   normalizePalette,
   resolveColor,
+  translatableTexts,
+  translationFromTexts,
   armConfig,
   DISCOUNT_LABELS,
   TEMPLATES,
@@ -37,6 +41,7 @@ import {
   type ArmOverride,
   type BrandPalette,
   type BundleItem,
+  type DealTranslation,
   type DiscountType,
   type MetafieldVar,
   type MixMatch,
@@ -73,6 +78,8 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   const moneyFormat = (shop?.moneyFormat || "${{amount}}").replace(/<[^>]*>/g, "");
   const palette = normalizePalette((shop?.settings as { brandPalette?: unknown } | null)?.brandPalette);
 
+  const locales = await shopLocales(admin);
+
   // Markets to limit a deal to (read_markets). Empty when the store has one market.
   let markets: { id: string; name: string }[] = [];
   try {
@@ -99,6 +106,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       ab: null,
       palette,
       markets,
+      locales,
       isNew: true,
       moneyFormat,
       currency: shop?.currencyCode ?? "USD",
@@ -145,6 +153,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     ab,
     palette,
     markets,
+    locales,
     isNew: false,
     moneyFormat,
     currency: shop?.currencyCode ?? "USD",
@@ -172,6 +181,21 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     if (deal) await prisma.deal.delete({ where: { id: deal.id } });
     await syncShop(admin, session.shop).catch((e) => console.error("Sync failed", e));
     return redirect("/app/deals");
+  }
+
+  if (body.intent === "translate") {
+    // Translates the editor's current draft; the merchant reviews, then saves.
+    const { data } = parseDealInput(body.deal ?? {});
+    const config = normalizeConfig(data.config, data.type as DealTypeKey);
+    const language = String((body as { language?: string }).language ?? "");
+    try {
+      const texts = await translateTexts(translatableTexts(config), language);
+      return { ok: true, errors: [] as string[], translation: translationFromTexts(texts) };
+    } catch (error) {
+      const message = error instanceof TranslateError ? error.message : "Translation failed. Try again.";
+      console.error("Auto-translate failed", error);
+      return { ok: false, errors: [message] };
+    }
   }
 
   const { errors, data } = parseDealInput(body.deal ?? {});
@@ -246,6 +270,8 @@ function DealEditor({ data }: { data: LoaderData }) {
   const [previewPrice, setPreviewPrice] = useState(29.99);
   const [previewProduct, setPreviewProduct] = useState<PreviewProduct | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  // The language an auto-translation is running for.
+  const [translating, setTranslating] = useState<string | null>(null);
 
   const loadPreviewProduct = useCallback(async (id: string) => {
     setPreviewLoading(true);
@@ -270,6 +296,25 @@ function DealEditor({ data }: { data: LoaderData }) {
   const dirty = isNew || JSON.stringify(deal) !== baseline;
   const saving = fetcher.state !== "idle";
   const result = fetcher.data;
+
+  // A finished auto-translation fills the draft (the merchant saves it).
+  useEffect(() => {
+    const payload = fetcher.data as { translation?: DealTranslation } | undefined;
+    if (fetcher.state !== "idle" || !payload?.translation || !translating) return;
+    const locale = translating;
+    const translation = payload.translation;
+    // The action's answer arrives as fetcher data; this effect is the one place
+    // that knows which language was being translated.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setTranslating(null);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setDeal((d) => ({
+      ...d,
+      config: { ...d.config, translations: { ...d.config.translations, [locale]: translation } },
+    }));
+    shopify.toast.show("Translated. Check the text, then save.");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetcher.state, fetcher.data]);
 
   // Reset the baseline after a successful save.
   useEffect(() => {
@@ -702,6 +747,21 @@ function DealEditor({ data }: { data: LoaderData }) {
 
       {/* ---------------- Metafield variables ---------------- */}
       <MetafieldVarsEditor vars={config.metafieldVars} onChange={(metafieldVars) => patchConfig({ metafieldVars })} />
+
+      {/* ---------------- Translations ---------------- */}
+      {data.locales.length > 1 ? (
+        <TranslationsEditor
+          locales={data.locales}
+          texts={translatableTexts(config)}
+          translations={config.translations}
+          busy={translating}
+          onChange={(translations) => patchConfig({ translations })}
+          onTranslate={(locale, language) => {
+            setTranslating(locale);
+            fetcher.submit({ intent: "translate", language, deal } as any, { method: "post", encType: "application/json" });
+          }}
+        />
+      ) : null}
 
       {/* ---------------- Mix & match ---------------- */}
       <MixMatchEditor
@@ -1561,6 +1621,88 @@ function AbTestPanel({
       </s-stack>
     </s-section>
   );
+}
+
+/** Deal texts per language, with auto-translate. */
+function TranslationsEditor({
+  locales,
+  texts,
+  translations,
+  busy,
+  onChange,
+  onTranslate,
+}: {
+  locales: { locale: string; name: string; primary: boolean }[];
+  texts: Record<string, string>;
+  translations: Record<string, DealTranslation>;
+  busy: string | null;
+  onChange: (translations: Record<string, DealTranslation>) => void;
+  onTranslate: (locale: string, language: string) => void;
+}) {
+  const others = locales.filter((l) => !l.primary);
+  const [locale, setLocale] = useState(others[0]?.locale ?? "");
+  const language = others.find((l) => l.locale === locale);
+  const current = translations[locale] ?? {};
+  const flat = translationToTexts(current);
+
+  const set = (key: string, value: string) =>
+    onChange({ ...translations, [locale]: translationFromTexts({ ...flat, [key]: value }) });
+
+  return (
+    <s-section heading="Translations">
+      <s-stack gap="base">
+        <s-paragraph color="subdued">
+          Your storefront shows these texts in the shopper&apos;s language. Anything you leave empty stays in{" "}
+          {locales.find((l) => l.primary)?.name ?? "your default language"}.
+        </s-paragraph>
+        <s-stack direction="inline" gap="base" alignItems="end">
+          <Select
+            label="Language"
+            value={locale}
+            onChange={setLocale}
+            options={others.map((l) => ({ value: l.locale, label: `${l.name} (${l.locale})` }))}
+          />
+          <s-button
+            loading={busy === locale || undefined}
+            onClick={() => language && onTranslate(locale, `${language.name} (${language.locale})`)}
+          >
+            Translate automatically
+          </s-button>
+        </s-stack>
+        <s-stack gap="small-200">
+          {Object.entries(texts).map(([key, source]) => (
+            <Grid key={key}>
+              <s-stack gap="small-100">
+                <s-text color="subdued">{source}</s-text>
+              </s-stack>
+              <TextField label={key} value={flat[key] ?? ""} placeholder={source} onChange={(v) => set(key, v)} />
+            </Grid>
+          ))}
+        </s-stack>
+      </s-stack>
+    </s-section>
+  );
+}
+
+/** A DealTranslation back to flat { key: text } (the shape the editor edits). */
+function translationToTexts(t: DealTranslation): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const key of ["blockTitle", "savingsText", "modalTitle", "modalButton"] as const) {
+    if (t[key]) out[key] = t[key]!;
+  }
+  for (const [barId, fields] of Object.entries(t.bars ?? {})) {
+    for (const [field, value] of Object.entries(fields ?? {})) {
+      if (field === "highlights" && Array.isArray(value)) {
+        value.forEach((h, i) => {
+          if (h) out[`bars.${barId}.highlights.${i}`] = h;
+        });
+      } else if (typeof value === "string" && value) {
+        out[`bars.${barId}.${field}`] = value;
+      }
+    }
+  }
+  for (const [id, text] of Object.entries(t.upsells ?? {})) if (text) out[`upsells.${id}`] = text;
+  return out;
 }
 
 const COLOR_FIELDS: [keyof DealStyle["colors"], string][] = [

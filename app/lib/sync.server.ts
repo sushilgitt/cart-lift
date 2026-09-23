@@ -7,8 +7,10 @@ import {
   effectiveGifts,
   liveArms,
   type DealConfig,
+  DEFAULT_STRINGS,
   metafieldKey,
   mixMatchPool,
+  normalizeStrings,
   normalizeConfig,
   normalizePalette,
   numericId,
@@ -30,7 +32,9 @@ import {
  *    `app.metafields.cartlift.deals`;
  *  - the gift config, on the AppInstallation's `cartlift/gifts` app-data
  *    metafield — the small slice of the Function config the cart watcher
- *    (cartlift-cart.js) needs on every page to keep free gifts in the cart.
+ *    (cartlift-cart.js) needs on every page to keep free gifts in the cart;
+ *  - one `cartlift/i18n_<locale>` metafield per translated language, so a page
+ *    only loads its own language.
  *
  * All three are rebuilt from scratch every time, so there is no partial-update state
  * to get out of sync. The hash skips the API calls when nothing changed.
@@ -227,6 +231,32 @@ export function buildGiftConfig(deals: Deal[], countries = new Map<string, strin
   return { v: 2, g: out.some((d) => d.bars.some((b) => b.gifts)), deals: out };
 }
 
+/**
+ * Deal texts and widget strings per language. One document per language, so a
+ * storefront page in German loads German only.
+ */
+export function buildTranslations(deals: Deal[], shopStrings: unknown) {
+  const strings = normalizeStrings(shopStrings);
+  const byLocale = new Map<string, { strings?: Record<string, string>; deals: Record<string, unknown> }>();
+  const bucket = (locale: string) => {
+    let b = byLocale.get(locale);
+    if (!b) byLocale.set(locale, (b = { deals: {} }));
+    return b;
+  };
+  for (const [locale, own] of Object.entries(strings)) bucket(locale).strings = own as Record<string, string>;
+  for (const deal of deals) {
+    const config = normalizeConfig(deal.config, deal.type as DealTypeKey);
+    for (const [locale, translation] of Object.entries(config.translations)) {
+      const clean = JSON.parse(JSON.stringify(translation)) as Record<string, unknown>;
+      if (Object.keys(clean).length) bucket(locale).deals[deal.id] = clean;
+    }
+  }
+  return byLocale;
+}
+
+/** Widget strings a language may override (documented for the editor). */
+export const STRING_KEYS = Object.keys(DEFAULT_STRINGS);
+
 const CREATE_DISCOUNT = `#graphql
   mutation cartliftCreateDiscount($discount: DiscountAutomaticAppInput!) {
     discountAutomaticAppCreate(automaticAppDiscount: $discount) {
@@ -323,10 +353,18 @@ export async function syncShop(
   const functionConfig = JSON.stringify(buildFunctionConfig(live, countries));
   const storefrontConfig = JSON.stringify(buildStorefrontConfig(shop, live, appUrl, countries));
   const giftConfig = JSON.stringify(buildGiftConfig(live, countries));
+  const translations = buildTranslations(live, (shop.settings as { i18n?: unknown } | null)?.i18n);
+  // Languages published before but empty now are cleared, not left stale.
+  const published = ((shop.settings as { locales?: unknown } | null)?.locales ?? []) as string[];
+  const locales = [...new Set([...translations.keys(), ...(Array.isArray(published) ? published : [])])];
+  const i18nConfig = JSON.stringify(
+    locales.map((locale) => [locale, JSON.stringify(translations.get(locale) ?? { deals: {} })]),
+  );
   const hash = createHash("sha256")
     .update(functionConfig)
     .update(storefrontConfig)
     .update(giftConfig)
+    .update(i18nConfig)
     .update(shop.discountId ?? "")
     .digest("hex");
 
@@ -353,6 +391,14 @@ export async function syncShop(
       type: "json",
       value: giftConfig,
     },
+    ...locales.map((locale) => ({
+      ownerId: installation.currentAppInstallation.id,
+      namespace: NAMESPACE,
+      // Metafield keys allow letters, numbers and underscores.
+      key: `i18n_${locale.replace(/-/g, "_").toLowerCase()}`,
+      type: "json",
+      value: JSON.stringify(translations.get(locale) ?? { deals: {} }),
+    })),
   ];
   if (!discount.created) {
     metafields.push({
@@ -363,13 +409,19 @@ export async function syncShop(
       value: functionConfig,
     });
   }
-  await setMetafields(admin, metafields);
+  // metafieldsSet takes 25 at a time.
+  for (let i = 0; i < metafields.length; i += 25) await setMetafields(admin, metafields.slice(i, i + 25));
+
+  // Remember which languages exist, so emptying one clears its metafield next time.
+  const settings = { ...((shop.settings ?? {}) as object), locales: [...translations.keys()] };
+  await prisma.shop.update({ where: { id: shop.id }, data: { settings: settings as never } });
 
   // Recompute with the (possibly new) discount id so the next call can skip.
   const finalHash = createHash("sha256")
     .update(functionConfig)
     .update(storefrontConfig)
     .update(giftConfig)
+    .update(i18nConfig)
     .update(discount.id)
     .digest("hex");
   await prisma.shop.update({
