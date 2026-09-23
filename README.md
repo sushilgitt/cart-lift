@@ -30,6 +30,16 @@ cd extensions/cartlift-discount && npx vitest run   # function tests
 | `CARTLIFT_AI_BASE_URL` | Any OpenAI-compatible endpoint; default `https://api.openai.com/v1`. |
 | `CARTLIFT_AI_MODEL` | Short jobs (translation). Default `gpt-5.4-mini`. |
 | `CARTLIFT_AI_MODEL_BIG` | The assistant. Default `gpt-5.4`. |
+| `CARTLIFT_SUPPORT_EMAIL` | Optional. Shown to merchants as the way to reach a person about a flagged support conversation. Without it, support only promises that the message is saved and flagged. |
+
+## Support
+`/app/support` is in-app support: the merchant asks, and CartLift answers from
+`app/lib/support-kb.ts` plus facts about their own shop (plan, embed on/off, how
+many deals are live). Anything it can't answer is flagged `needsHuman` on the
+thread for a person to follow up. **`support-kb.ts` is the only thing support
+knows — when the app changes, change it in the same commit, or merchants get
+confidently wrong answers.** Without an AI key the page still works: every
+message is stored and marked for a person.
 
 ## Headless and compatibility
 - `packages/headless` — deal matching, pricing and the cart lines checkout

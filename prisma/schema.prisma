@@ -75,6 +75,44 @@ model Shop {
   checkouts DealCheckout[]
   facts     StatFact[]
   costs     VariantCost[]
+  threads   SupportThread[]
+}
+
+/// Who wrote a support message.
+enum SupportAuthor {
+  MERCHANT
+  ASSISTANT
+  /// A reply written by a person on our side.
+  HUMAN
+}
+
+/// One support conversation with a shop.
+model SupportThread {
+  id        String          @id @default(cuid())
+  shopId    String
+  shop      Shop            @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  /// The first thing the merchant asked, for the conversation list.
+  subject   String
+  /// The merchant asked for a person, and we haven't answered yet.
+  needsHuman Boolean        @default(false)
+  closedAt  DateTime?
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  messages  SupportMessage[]
+
+  @@index([shopId, updatedAt])
+}
+
+model SupportMessage {
+  id        String        @id @default(cuid())
+  threadId  String
+  thread    SupportThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  author    SupportAuthor
+  body      String
+  createdAt DateTime      @default(now())
+
+  @@index([threadId, createdAt])
 }
 
 enum DealStatus {

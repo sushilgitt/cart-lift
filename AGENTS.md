@@ -5,6 +5,9 @@ This app is scaffolded from a Shopify app template. See the README for framework
 Use the [Shopify AI Toolkit](https://shopify.dev/docs/apps/build/ai-toolkit) for all Shopify API and platform work. If missing, install it in the agent host per that page (or `npx skills add Shopify/shopify-ai-toolkit --list` for skill-compatible hosts) — do not add tooling to this repo.
 
 ## AI features
+Support answers merchants from `app/lib/support-kb.ts`. Change it in the same
+commit as any behaviour, price or limit it describes.
+
 CartLift's AI features (auto-translate, the deal assistant) go through
 `app/lib/ai.server.ts`, which talks to whichever service `CARTLIFT_AI_PROVIDER`
 names — an OpenAI-compatible endpoint (the default) or Anthropic. Add new AI

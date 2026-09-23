@@ -10,6 +10,7 @@ import { ensureWebPixel } from "../lib/pixel.server";
 import { syncPlanFromShopify } from "../lib/billing.server";
 import { I18nProvider, adminLocale, matchLocale, useT } from "../lib/admin-i18n";
 import { aiSettings } from "../lib/ai.server";
+import { SupportLauncher } from "../components/SupportLauncher";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { admin, session } = await authenticate.admin(request);
@@ -48,6 +49,7 @@ export default function App() {
       <I18nProvider locale={language}>
         <Nav assistant={assistant} />
         <Outlet />
+        <SupportLauncher />
       </I18nProvider>
     </AppProvider>
   );
@@ -63,6 +65,7 @@ function Nav({ assistant }: { assistant: boolean }) {
       <s-link href="/app/analytics">{t("Analytics")}</s-link>
       <s-link href="/app/settings">{t("Settings")}</s-link>
       <s-link href="/app/plans">{t("Plans")}</s-link>
+      <s-link href="/app/support">{t("Support")}</s-link>
     </s-app-nav>
   );
 }
