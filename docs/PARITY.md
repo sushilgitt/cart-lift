@@ -98,7 +98,7 @@ Legend: ✅ done · 🟡 partial · ❌ missing
 |---|---|
 | All / selected / collections / all-except | ✅ |
 | Start & end schedule | ✅ |
-| Markets | ❌ |
+| Markets | ✅ per deal (Phase 5); the Function checks the buyer's country |
 | Up to 250 products per deal | ✅ |
 
 ### 1.8 Placement & integrations
