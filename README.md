@@ -49,12 +49,10 @@ named `<handle>-annual`:
 | `starter` | $14.99 | $1,000 |
 | `scale` | $29.99 | $5,000 |
 | `pro` | $59.99 | $10,000 |
-| `flex-20k` | $99 | $20,000 |
-| `flex-30k` | $149 | $30,000 |
-| `flex-40k` | $199 | $40,000 |
-| `flex-50k` | $299 | $50,000 |
 
 Set a 7-day trial on every paid plan (`TRIAL_DAYS` in `plans.ts` only *says* 7).
+The `Plan` enum in the database also carries four retired FLEX tiers, because
+Postgres cannot drop an enum value; `RETIRED_PLANS` maps them onto Pro.
 Development stores are free: `Shop.devStore` comes from `shop.plan.partnerDevelopment`
 and skips the limit and its banners. Going over a limit never pauses deals — the
 merchant is shown the plan that would cover the month.

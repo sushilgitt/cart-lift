@@ -36,16 +36,20 @@ export async function appHandle(admin: AdminGraphql): Promise<string> {
   return cachedHandle || process.env.SHOPIFY_APP_HANDLE || "cartlift-19";
 }
 
-/** Bigger plan wins when a store somehow has two active subscriptions. */
+/**
+ * Bigger plan wins when a store somehow has two active subscriptions. The FLEX
+ * tiers are retired and no longer sold; they stay here because the database
+ * enum still has them (Postgres cannot drop an enum value).
+ */
 const RANK: Record<Plan, number> = {
   FREE: 0,
   STARTER: 1,
   SCALE: 2,
   PRO: 3,
-  FLEX20: 4,
-  FLEX30: 5,
-  FLEX40: 6,
-  FLEX50: 7,
+  FLEX20: 3,
+  FLEX30: 3,
+  FLEX40: 3,
+  FLEX50: 3,
 };
 
 /**

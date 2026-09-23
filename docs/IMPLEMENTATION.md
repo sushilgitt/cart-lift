@@ -388,6 +388,10 @@ human review; lint rule against hard-coded strings in routes.
 ## Phase 6 — Billing & ecosystem
 
 ### 6.1 Plans
+*(2026-09-23: the four FLEX tiers were removed again — the plans now stop at Pro.
+The database enum keeps them because Postgres cannot drop an enum value, and
+`RETIRED_PLANS` maps them onto Pro.)*
+
 Seven tiers ($14.99 → $299, caps $1K → $50K+), annual variants, 7-day trial,
 dev stores free — configured in the Partner dashboard, mirrored in `plans.ts`
 (handles + `planFor` suffixes already handle `-annual`).

@@ -134,7 +134,7 @@ Legend: ✅ done · 🟡 partial · ❌ missing
 | Dashboard with added revenue, templates page, onboarding | ✅ |
 | "Ching" AI assistant — build from prompt/screenshot/URL, edit in plain English, diagnose setup, translations | ✅ build from prompt / URL / screenshot, edit in plain English, translations (Phase 5). Diagnosis is the Settings troubleshooting panel, not the assistant |
 | Plans on added revenue: $14.99 / $29.99 / $59.99 (+ monthly caps) | ✅ |
-| Flex tiers $99 / $149 / $199 / $299 (to $50K+) | ✅ Flex 20K/30K/40K/50K |
+| Flex tiers $99 / $149 / $199 / $299 (to $50K+) | 🟡 **deliberate difference**: built, then removed on 2026-09-23. CartLift tops out at Pro ($59.99, $10K) |
 | Annual plans (~27% off), 7-day trial | ✅ shown in the app; the prices themselves are Partner dashboard config |
 | Dev stores free, no free production plan | ✅ dev stores free; 🟡 we also keep a Free plan ($250 cap) |
 | Auto-upgrade when cap passed | 🟡 **deliberate difference**: managed pricing needs merchant approval, so CartLift names the plan that would cover the month instead of switching. Deals never pause |
@@ -247,7 +247,7 @@ Closes 1.8 and billing rows of 1.10.
   Replo, UpCart, 2048 Variants, variant-image apps.
 - Headless: React component package and Hydrogen example.
 
-**Built:** four Flex tiers to $299, annual prices and the trial shown in-app,
+**Built:** annual prices and the trial shown in-app,
 development stores free (`Shop.devStore`), and an over-limit prompt that names
 the plan covering the month. A/B testing, advertised as paid, is now actually
 gated. The widget re-mounts when a page builder renders or rebuilds the product

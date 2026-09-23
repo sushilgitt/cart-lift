@@ -238,6 +238,6 @@ describe("who may ask, and how often", () => {
   test("bigger plans get more", () => {
     expect(DAILY_LIMIT.FREE).toBe(0);
     expect(DAILY_LIMIT.PRO).toBeGreaterThan(DAILY_LIMIT.STARTER);
-    expect(DAILY_LIMIT.FLEX50).toBeGreaterThanOrEqual(DAILY_LIMIT.PRO);
+    expect(DAILY_LIMIT.PRO).toBeGreaterThan(DAILY_LIMIT.SCALE);
   });
 });

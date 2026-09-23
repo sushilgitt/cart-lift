@@ -72,45 +72,21 @@ export const PLANS: PlanDefinition[] = [
     limit: 10_000,
     features: ["Everything in Scale", "Up to $10,000 added revenue / month", "Priority support"],
   },
-  {
-    id: "FLEX20",
-    handle: "flex-20k",
-    name: "Flex 20K",
-    price: 99,
-    annualPrice: yearly(99),
-    limit: 20_000,
-    features: ["Everything in Pro", "Up to $20,000 added revenue / month"],
-  },
-  {
-    id: "FLEX30",
-    handle: "flex-30k",
-    name: "Flex 30K",
-    price: 149,
-    annualPrice: yearly(149),
-    limit: 30_000,
-    features: ["Everything in Pro", "Up to $30,000 added revenue / month"],
-  },
-  {
-    id: "FLEX40",
-    handle: "flex-40k",
-    name: "Flex 40K",
-    price: 199,
-    annualPrice: yearly(199),
-    limit: 40_000,
-    features: ["Everything in Pro", "Up to $40,000 added revenue / month"],
-  },
-  {
-    id: "FLEX50",
-    handle: "flex-50k",
-    name: "Flex 50K",
-    price: 299,
-    annualPrice: yearly(299),
-    limit: 50_000,
-    features: ["Everything in Pro", "Up to $50,000 added revenue / month", "Onboarding call"],
-  },
 ];
 
-export const planById = (id: Plan) => PLANS.find((p) => p.id === id) ?? PLANS[0];
+/**
+ * Plans that were offered once and no longer are. The database enum keeps them
+ * (Postgres cannot drop an enum value), so a shop that somehow still carries
+ * one is read as the closest plan we do offer rather than silently as Free.
+ */
+export const RETIRED_PLANS: Record<string, Plan> = {
+  FLEX20: "PRO",
+  FLEX30: "PRO",
+  FLEX40: "PRO",
+  FLEX50: "PRO",
+};
+
+export const planById = (id: Plan) => PLANS.find((p) => p.id === (RETIRED_PLANS[id] ?? id)) ?? PLANS[0];
 
 /**
  * The cheapest plan that covers this much added revenue, for the upgrade

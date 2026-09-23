@@ -282,10 +282,11 @@ export const DAILY_LIMIT: Record<Plan, number> = {
   STARTER: 20,
   SCALE: 50,
   PRO: 100,
-  FLEX20: 200,
-  FLEX30: 200,
-  FLEX40: 300,
-  FLEX50: 300,
+  // Retired tiers, kept because the database enum still has them.
+  FLEX20: 100,
+  FLEX30: 100,
+  FLEX40: 100,
+  FLEX50: 100,
 };
 
 export interface AssistantAccess {

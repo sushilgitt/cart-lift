@@ -10,7 +10,7 @@ describe("plans", () => {
       expect(PLANS[i].limit, PLANS[i].name).toBeGreaterThan(PLANS[i - 1].limit);
     }
     expect(PLANS[0]).toMatchObject({ id: "FREE", price: 0, limit: 250 });
-    expect(PLANS[PLANS.length - 1]).toMatchObject({ price: 299, limit: 50_000 });
+    expect(PLANS[PLANS.length - 1]).toMatchObject({ id: "PRO", price: 59.99, limit: 10_000 });
     expect(TRIAL_DAYS).toBe(7);
   });
 
@@ -27,10 +27,9 @@ describe("plans", () => {
     expect(planFrom(900)?.id).toBe("STARTER");
     expect(planFrom(1_000)?.id).toBe("STARTER"); // exactly at the limit still fits
     expect(planFrom(1_001)?.id).toBe("SCALE");
-    expect(planFrom(12_000)?.id).toBe("FLEX20");
-    expect(planFrom(45_000)?.id).toBe("FLEX50");
+    expect(planFrom(10_000)?.id).toBe("PRO");
     // Past the biggest plan there is nothing left to suggest.
-    expect(planFrom(80_000)).toBe(null);
+    expect(planFrom(12_000)).toBe(null);
   });
 
   test("plan handles from Shopify map back to a plan, monthly or annual", () => {
@@ -45,5 +44,14 @@ describe("plans", () => {
 
   test("an unknown plan id falls back to Free rather than crashing the admin", () => {
     expect(planById("NOPE" as never).id).toBe("FREE");
+  });
+
+  test("a shop left on a retired tier reads as the closest plan we still sell", () => {
+    // The database enum keeps FLEX20–FLEX50; nobody should be on one, but if
+    // they are, they keep Pro's limits rather than dropping to Free.
+    for (const retired of ["FLEX20", "FLEX30", "FLEX40", "FLEX50"] as const) {
+      expect(planById(retired).id, retired).toBe("PRO");
+    }
+    expect(PLANS.map((p) => p.id)).not.toContain("FLEX20");
   });
 });
