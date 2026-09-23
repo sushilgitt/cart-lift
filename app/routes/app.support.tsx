@@ -14,7 +14,6 @@ import {
   messagesToday,
   sendMessage,
   supportAiReady,
-  supportEmail,
 } from "../lib/support.server";
 import { useT } from "../lib/admin-i18n";
 import { TextArea } from "../components/fields";
@@ -32,7 +31,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
   return {
     ai: supportAiReady(),
-    email: supportEmail(),
     left: Math.max(0, DAILY_MESSAGES - messagesToday(shop)),
     threads: (await listThreads(shop.id)).map((t) => ({
       id: t.id,
@@ -69,7 +67,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       shop,
       threadId: String(form.get("thread") ?? "") || null,
       body: String(form.get("body") ?? ""),
-      wantsHuman: form.get("intent") === "human",
       embedOn: embed.enabled,
     });
     return { ok: true, threadId };
@@ -101,9 +98,9 @@ export default function Support() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fetcher.state, result]);
 
-  const send = (intent: "ask" | "human") => {
+  const send = () => {
     if (!body.trim()) return;
-    fetcher.submit({ intent, body, thread: d.thread?.id ?? "" }, { method: "post" });
+    fetcher.submit({ body, thread: d.thread?.id ?? "" }, { method: "post" });
   };
 
   const when = (iso: string) => new Date(iso).toLocaleString();
@@ -126,10 +123,7 @@ export default function Support() {
             ))}
             {busy ? <s-text color="subdued">{t("Writing a reply…")}</s-text> : null}
             {d.thread.needsHuman ? (
-              <s-banner tone="info">
-                {t("This conversation is flagged for a person.")}{" "}
-                {d.email ? <s-link href={`mailto:${d.email}?subject=${encodeURIComponent(d.thread.subject)}`}>{d.email}</s-link> : null}
-              </s-banner>
+              <s-banner tone="info">{t("This conversation is flagged for a person.")}</s-banner>
             ) : null}
           </s-stack>
         </s-section>
@@ -155,21 +149,11 @@ export default function Support() {
             onChange={setBody}
           />
           <s-stack direction="inline" gap="base" alignItems="center">
-            {d.ai ? (
-              <s-button variant="primary" loading={busy || undefined} disabled={!d.left || undefined} onClick={() => send("ask")}>
-                {t("Send")}
-              </s-button>
-            ) : null}
-            <s-button loading={busy || undefined} disabled={!d.left || undefined} onClick={() => send("human")}>
-              {t("Talk to a person")}
+            <s-button variant="primary" loading={busy || undefined} disabled={!d.left || undefined} onClick={send}>
+              {t("Send")}
             </s-button>
             {d.left ? null : <s-text color="subdued">{t("You've reached today's message limit.")}</s-text>}
           </s-stack>
-          {d.email ? (
-            <s-text color="subdued">
-              {t("Or email us at")} <s-link href={`mailto:${d.email}`}>{d.email}</s-link>
-            </s-text>
-          ) : null}
         </s-stack>
       </s-section>
 

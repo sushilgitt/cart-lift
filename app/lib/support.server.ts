@@ -138,20 +138,14 @@ export async function answerQuestion(
   }
 }
 
-/** Where merchants can reach a person directly, when we publish an address. */
-export const supportEmail = () => (process.env.CARTLIFT_SUPPORT_EMAIL || "").trim();
-
 /**
- * The message a merchant gets when AI support is off, or they asked for a
- * person. It only promises what the app can keep: the conversation is saved and
- * flagged, and — when an address is configured — where to reach a human now.
+ * What a merchant is told when the assistant can't answer — because no AI
+ * service is configured, or the request failed. It states what actually
+ * happened and promises nothing the app can't keep: the app offers no way to
+ * reach a person, so it doesn't pretend to.
  */
-export function humanReply(): string {
-  const email = supportEmail();
-  return email
-    ? `Thanks — this is saved and flagged for a person. For anything urgent, email ${email} and mention this conversation.`
-    : "Thanks — this is saved and flagged for a person to follow up.";
-}
+export const CANT_ANSWER =
+  "Thanks — this is saved to your conversation. CartLift's assistant couldn't answer this one.";
 
 export interface ThreadWithMessages extends SupportThread {
   messages: { id: string; author: string; body: string; createdAt: Date }[];
@@ -162,8 +156,6 @@ export async function sendMessage(options: {
   shop: Shop;
   threadId?: string | null;
   body: string;
-  /** The merchant pressed "talk to a person" instead of asking the assistant. */
-  wantsHuman?: boolean;
   embedOn?: boolean | null;
 }): Promise<{ threadId: string }> {
   const body = options.body.trim().slice(0, 4000);
@@ -193,9 +185,9 @@ export async function sendMessage(options: {
   await prisma.supportMessage.create({ data: { threadId: thread.id, author: "MERCHANT", body } });
   await countMessage(options.shop);
 
-  // Asked for a person, or no AI configured: say so honestly and flag the thread.
-  if (options.wantsHuman || !supportAiReady()) {
-    await prisma.supportMessage.create({ data: { threadId: thread.id, author: "ASSISTANT", body: humanReply() } });
+  // No AI configured: say so honestly and flag the thread for a person to read.
+  if (!supportAiReady()) {
+    await prisma.supportMessage.create({ data: { threadId: thread.id, author: "ASSISTANT", body: CANT_ANSWER } });
     await prisma.supportThread.update({
       where: { id: thread.id },
       data: { needsHuman: true, updatedAt: new Date() },
@@ -209,7 +201,7 @@ export async function sendMessage(options: {
     answer = await answerQuestion(body, context, thread.messages ?? []);
   } catch (error) {
     // A failure still leaves the merchant with a thread and a person to answer it.
-    await prisma.supportMessage.create({ data: { threadId: thread.id, author: "ASSISTANT", body: humanReply() } });
+    await prisma.supportMessage.create({ data: { threadId: thread.id, author: "ASSISTANT", body: CANT_ANSWER } });
     await prisma.supportThread.update({ where: { id: thread.id }, data: { needsHuman: true, updatedAt: new Date() } });
     console.error("Support answer failed", error);
     return { threadId: thread.id };

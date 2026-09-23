@@ -137,20 +137,10 @@ describe("the knowledge base", () => {
 });
 
 describe("what support promises a merchant", () => {
-  test("without a support address it only promises what the app can keep", async () => {
-    delete process.env.CARTLIFT_SUPPORT_EMAIL;
-    const { humanReply } = await import("./support.server");
-    const reply = humanReply();
-    expect(reply).toContain("flagged for a person");
-    // No promise of an email nobody is watching.
-    expect(reply).not.toMatch(/email|@/i);
-  });
-
-  test("with an address, it tells the merchant where to reach one", async () => {
-    process.env.CARTLIFT_SUPPORT_EMAIL = "help@example.com";
-    const { humanReply, supportEmail } = await import("./support.server");
-    expect(supportEmail()).toBe("help@example.com");
-    expect(humanReply()).toContain("help@example.com");
-    delete process.env.CARTLIFT_SUPPORT_EMAIL;
+  test("it states what happened and promises nothing the app can't keep", async () => {
+    const { CANT_ANSWER } = await import("./support.server");
+    expect(CANT_ANSWER).toContain("saved to your conversation");
+    // The app has no way to reach a person, so it must not imply one.
+    expect(CANT_ANSWER).not.toMatch(/email|@|get back to you|reply to you/i);
   });
 });
