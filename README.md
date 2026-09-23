@@ -25,8 +25,11 @@ cd extensions/cartlift-discount && npx vitest run   # function tests
 | `SHOPIFY_APP_URL` | Public URL, e.g. https://cartlift.91.239.208.85.sslip.io |
 | `SCOPES` | Same as `shopify.app.toml` |
 | `DATABASE_URL` | Postgres connection string |
-| `ANTHROPIC_API_KEY` | Auto-translate (deal texts and widget words). Without it the rest of the app works and "Translate automatically" says the key is missing. |
-| `CARTLIFT_TRANSLATE_MODEL` | Optional; defaults to `claude-opus-5`. |
+| `CARTLIFT_AI_KEY` | Auto-translate and the deal assistant. Without it the rest of the app works and the AI features say the key is missing. `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` are read too. |
+| `CARTLIFT_AI_PROVIDER` | `openai-compatible` (default) or `anthropic`. |
+| `CARTLIFT_AI_BASE_URL` | Any OpenAI-compatible endpoint; default `https://api.openai.com/v1`. |
+| `CARTLIFT_AI_MODEL` | Short jobs (translation). Default `gpt-5.4-mini`. |
+| `CARTLIFT_AI_MODEL_BIG` | The assistant. Default `gpt-5.4`. |
 
 ## Deploy
 - App server: Coolify (Dockerfile build from `main`).
