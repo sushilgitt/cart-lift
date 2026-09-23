@@ -10,7 +10,7 @@
  */
 import { formatMoney, priceBar } from "../../core/src";
 import { initialBar, renderDeal } from "./render";
-import { init } from "./storefront";
+import { init, watchForChanges } from "./storefront";
 import type { RenderCtx, RenderState, SfDeal } from "./types";
 
 interface CartLiftGlobal {
@@ -81,6 +81,11 @@ if (!w.CartLift?.loaded) {
   CL.priceBar = priceBar;
   CL.formatMoney = formatMoney;
 
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
-  else init();
+  const start = () => {
+    init();
+    // Page builders and quick views render the form after this point.
+    watchForChanges();
+  };
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start);
+  else start();
 }

@@ -705,3 +705,77 @@ describe("Phase 5: subscriptions", () => {
     expect(page.$(".cl-bar.is-selected .cl-price")?.textContent).toBe("$20.00");
   });
 });
+
+describe("Phase 6: page builders and late-rendered forms", () => {
+  /** A page whose product form only appears later, the way a page builder does it. */
+  function builderPage(deal: Json) {
+    const window = new Window({ url: "https://shop.test/products/tee" });
+    const document = window.document;
+    Object.assign(window, {
+      fetch: async () => ({ ok: true, json: async () => ({ items: [] }) }),
+      Shopify: { currency: { rate: "1.0" }, routes: { root: "/" } },
+      alert: () => {},
+    });
+    (window.navigator as unknown as { sendBeacon: () => boolean }).sendBeacon = () => true;
+    const data = document.createElement("script");
+    data.type = "application/json";
+    data.setAttribute("data-cartlift-data", "1");
+    data.textContent = JSON.stringify({
+      config: { v: 1, api: "", css: "", deals: [deal] },
+      product: TEE,
+      collections: [],
+      moneyFormat: "${{amount}}",
+      shop: "s.myshopify.com",
+      placement: "auto",
+    });
+    document.body.appendChild(data);
+    window.eval(asset("cartlift.js"));
+
+    const render = () => {
+      document.body.insertAdjacentHTML(
+        "beforeend",
+        `<section class="shopify-section"><form action="/cart/add" class="product-form">
+           <input type="hidden" name="id" value="11">
+           <div class="product-form__quantity"><input name="quantity" value="1"></div>
+           <div class="product-form__buttons"><button type="submit" name="add">Add</button></div>
+         </form></section>`,
+      );
+    };
+    const settle = () => new Promise((r) => setTimeout(r, 300));
+    const $ = (s: string) => document.querySelector(s) as unknown as HTMLElement | null;
+    return { document, window, render, settle, $ };
+  }
+
+  const twoBars = deal([bar({ id: "b1" }), bar({ id: "b2", qty: 2, dt: "percentage", dv: 10, selected: true })]);
+
+  test("a form rendered after the page loaded still gets the widget", async () => {
+    const page = builderPage(twoBars);
+    expect(page.$(".cl-block")).toBe(null); // nothing to mount into yet
+    page.render();
+    await page.settle();
+    expect(page.$(".cl-block")).not.toBe(null);
+    expect(page.document.querySelectorAll(".cl-bar")).toHaveLength(2);
+  });
+
+  test("a builder that throws the form away and rebuilds it gets the widget back, once", async () => {
+    const page = builderPage(twoBars);
+    page.render();
+    await page.settle();
+    page.document.querySelector("section")!.remove();
+    page.render();
+    await page.settle();
+    expect(page.document.querySelectorAll(".cl-block")).toHaveLength(1);
+    expect(page.document.querySelectorAll(".cl-bar")).toHaveLength(2);
+  });
+
+  test("a page that keeps changing elsewhere doesn't mount the widget twice", async () => {
+    const page = builderPage(twoBars);
+    page.render();
+    await page.settle();
+    for (let i = 0; i < 5; i++) {
+      page.document.body.insertAdjacentHTML("beforeend", `<div class="noise">${i}</div>`);
+    }
+    await page.settle();
+    expect(page.document.querySelectorAll(".cl-block")).toHaveLength(1);
+  });
+});

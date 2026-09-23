@@ -31,6 +31,13 @@ cd extensions/cartlift-discount && npx vitest run   # function tests
 | `CARTLIFT_AI_MODEL` | Short jobs (translation). Default `gpt-5.4-mini`. |
 | `CARTLIFT_AI_MODEL_BIG` | The assistant. Default `gpt-5.4`. |
 
+## Headless and compatibility
+- `packages/headless` — deal matching, pricing and the cart lines checkout
+  expects, for storefronts that render their own product page; `examples/hydrogen`
+  shows it in a Hydrogen route.
+- `docs/COMPATIBILITY.md` — how the widget places itself, how it survives page
+  builders, and the `window.CartLift.onCartUpdated` hook for cart drawers.
+
 ## Plans (Shopify managed pricing)
 Prices, trials and annual options live in the Partner dashboard; `app/lib/plans.ts`
 only mirrors them. Each plan needs a handle that matches, and an annual variant

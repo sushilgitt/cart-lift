@@ -256,6 +256,19 @@ function start() {
   function refreshTheme(cart: AjaxCart) {
     document.dispatchEvent(new CustomEvent("cartlift:cart-updated", { detail: cart }));
 
+    // A theme or cart-drawer app can take over the refresh in one line:
+    //   window.CartLift = { ...window.CartLift, onCartUpdated: cart => myDrawer.reload() }
+    const hook = (window as unknown as { CartLift?: { onCartUpdated?: (cart: AjaxCart) => void } }).CartLift?.onCartUpdated;
+    if (typeof hook === "function") {
+      try {
+        hook(cart);
+        refreshBubble();
+        return;
+      } catch {
+        // The hook failed; fall through to the usual refresh.
+      }
+    }
+
     // The cart page shows lines and totals; reload it so both are right.
     if (/^cart/.test(data.template || "") || /\/cart\/?$/.test(window.location.pathname)) {
       const now = Date.now();
@@ -278,10 +291,13 @@ function start() {
       refreshBubble();
       return;
     }
-    // Events other popular themes listen to for a cart re-render.
-    ["cart:refresh", "cart:build", "theme:cart:reload"].forEach((name) => {
+    // Events other popular themes and cart-drawer apps listen to for a
+    // re-render. They are all "please re-read the cart", so sending several is
+    // safe: a drawer that doesn't know one ignores it.
+    ["cart:refresh", "cart:build", "theme:cart:reload", "cart:updated", "cart-drawer:refresh"].forEach((name) => {
       document.documentElement.dispatchEvent(new CustomEvent(name, { bubbles: true, detail: { cart } }));
     });
+    refreshBubble();
   }
 
   // Scheduling -----------------------------------------------------------------

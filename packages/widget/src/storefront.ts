@@ -717,6 +717,56 @@ function defineElement() {
   customElements.define("cartlift-bundle", class extends HTMLElement {});
 }
 
+/**
+ * Product id → the slot the widget is living in. Page builders (PageFly,
+ * GemPages, EComposer, Replo…) render and re-render the product form after the
+ * page has loaded, and some replace it wholesale, so `init` is safe to call
+ * again: a product whose slot is still on the page is left alone, and one whose
+ * slot was thrown away is mounted again.
+ */
+const mounted = new Map<string, HTMLElement>();
+
+/**
+ * Mounts again when the page changes under us.
+ *
+ * Between them these cover the ways a product form appears late: a page builder
+ * rendering it after load, a theme section re-rendered in the theme editor, a
+ * quick-view drawer, and the back/forward cache. `init` is cheap when nothing
+ * changed — it skips every product whose slot it still owns.
+ */
+export function watchForChanges() {
+  let queued: ReturnType<typeof setTimeout> | undefined;
+  const soon = () => {
+    clearTimeout(queued);
+    queued = setTimeout(init, 200);
+  };
+  const interesting = 'form[action*="/cart/add"], script[data-cartlift-data], cartlift-bundle, .cartlift-slot';
+
+  if (typeof MutationObserver === "function") {
+    new MutationObserver((records) => {
+      for (const record of records) {
+        for (const node of Array.from(record.addedNodes)) {
+          const element = node as Element;
+          if (element.nodeType !== 1) continue;
+          if (element.matches?.(interesting) || element.querySelector?.(interesting)) return soon();
+        }
+        // Our own slot being taken out counts too: the widget has to come back.
+        for (const node of Array.from(record.removedNodes)) {
+          const element = node as Element;
+          if (element.nodeType === 1 && element.classList?.contains("cartlift-slot")) return soon();
+        }
+      }
+    }).observe(document.documentElement, { childList: true, subtree: true });
+  }
+
+  // Theme editor: the section being edited is re-rendered in place.
+  document.addEventListener("shopify:section:load", soon);
+  document.addEventListener("shopify:section:select", soon);
+  // Back/forward cache, and builders that swap content on navigation.
+  window.addEventListener("pageshow", soon);
+  window.addEventListener("popstate", soon);
+}
+
 export function init() {
   if (/[?&]cartlift=off\b/.test(window.location.search)) return;
   defineElement();
@@ -733,6 +783,11 @@ export function init() {
   const done: Record<string, boolean> = {};
   parsed.forEach((data) => {
     if (!data.product || !data.config || done[data.product.id]) return;
+    // Already on the page and still there: leave it alone.
+    if (mounted.get(String(data.product.id))?.isConnected) {
+      done[data.product.id] = true;
+      return;
+    }
     const deal = matchDeal(data);
     if (!deal) return;
 
@@ -760,6 +815,7 @@ export function init() {
     }
     if (!slot || !form) return;
     done[data.product.id] = true;
+    mounted.set(String(data.product.id), slot);
     if (data.config.css && !document.getElementById("cartlift-custom-css")) {
       const style = document.createElement("style");
       style.id = "cartlift-custom-css";

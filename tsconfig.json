@@ -1,5 +1,7 @@
 {
   "include": ["env.d.ts", "**/*.ts", "**/*.tsx", ".react-router/types/**/*"],
+  // examples/ is reference code for other apps (Hydrogen), with their deps.
+  "exclude": ["examples", "node_modules", "build"],
   "compilerOptions": {
     "lib": ["DOM", "DOM.Iterable", "ES2022"],
     "strict": true,
