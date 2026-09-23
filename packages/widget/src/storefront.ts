@@ -735,6 +735,9 @@ const mounted = new Map<string, HTMLElement>();
  * changed — it skips every product whose slot it still owns.
  */
 export function watchForChanges() {
+  // Unusual hosts (an admin preview, a sandboxed iframe) can have a document
+  // without these. Watching is an improvement, never a requirement.
+  if (typeof document?.addEventListener !== "function" || !document.documentElement) return;
   let queued: ReturnType<typeof setTimeout> | undefined;
   const soon = () => {
     clearTimeout(queued);
