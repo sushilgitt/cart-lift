@@ -59,9 +59,18 @@ export function aiSettings(): AiSettings | null {
   };
 }
 
+/** An image sent with the question (a screenshot of an offer, say). */
+export interface AskImage {
+  /** "image/png", "image/jpeg", … */
+  media: string;
+  base64: string;
+}
+
 export interface AskOptions {
   system: string;
   user: string;
+  /** Images to look at. Ignored by models without vision. */
+  images?: AskImage[];
   /** "big" for work that reasons over a whole deal; "small" (default) for short texts. */
   size?: "small" | "big";
   maxTokens?: number;
@@ -124,7 +133,18 @@ async function openAiCall(
       model,
       messages: [
         { role: "system", content: options.system },
-        { role: "user", content: options.user },
+        {
+          role: "user",
+          content: options.images?.length
+            ? [
+                { type: "text", text: options.user },
+                ...options.images.map((image) => ({
+                  type: "image_url",
+                  image_url: { url: `data:${image.media};base64,${image.base64}` },
+                })),
+              ]
+            : options.user,
+        },
       ],
       response_format: { type: "json_object" },
       // Current OpenAI models want max_completion_tokens; older clones only
@@ -166,7 +186,20 @@ async function anthropicCall(
       model,
       max_tokens: maxTokens,
       system: options.system,
-      messages: [{ role: "user", content: options.user }],
+      messages: [
+        {
+          role: "user",
+          content: options.images?.length
+            ? [
+                { type: "text", text: options.user },
+                ...options.images.map((image) => ({
+                  type: "image",
+                  source: { type: "base64", media_type: image.media, data: image.base64 },
+                })),
+              ]
+            : options.user,
+        },
+      ],
     }),
   });
   const body = (await response.json().catch(() => null)) as {

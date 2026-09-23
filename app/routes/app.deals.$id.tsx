@@ -8,6 +8,8 @@ import { authenticate } from "../shopify.server";
 import { getDeal, nextPriority, parseDealInput, shopIdFor } from "../lib/deal.server";
 import { gql } from "../lib/shop.server";
 import { TranslateError, translateTexts } from "../lib/translate.server";
+import { AssistantError, assistantAccess, countAssistantUse, editDeal } from "../lib/assistant.server";
+import { aiSettings } from "../lib/ai.server";
 import { shopLocales } from "../lib/locales.server";
 import { syncShop } from "../lib/sync.server";
 import { abResult, MIN_ORDERS_PER_ARM } from "../../packages/core/src";
@@ -83,6 +85,9 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   const locales = await shopLocales(admin);
   // A/B testing is a paid feature; development stores get everything.
   const abAllowed = Boolean(shop?.devStore) || (shop?.plan ?? "FREE") !== "FREE";
+  // The assistant: same gate, plus a daily count and a key on the server.
+  const shopRow = await prisma.shop.findUniqueOrThrow({ where: { domain: session.shop } });
+  const assistant = { ...(await assistantAccess(shopRow)), configured: Boolean(aiSettings()) };
 
   // Markets to limit a deal to (read_markets). Empty when the store has one market.
   let markets: { id: string; name: string }[] = [];
@@ -112,6 +117,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       markets,
       locales,
       abAllowed,
+      assistant,
       isNew: true,
       moneyFormat,
       currency: shop?.currencyCode ?? "USD",
@@ -160,6 +166,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     markets,
     locales,
     abAllowed,
+    assistant,
     isNew: false,
     moneyFormat,
     currency: shop?.currencyCode ?? "USD",
@@ -200,6 +207,28 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     } catch (error) {
       const message = error instanceof TranslateError ? error.message : "Translation failed. Try again.";
       console.error("Auto-translate failed", error);
+      return { ok: false, errors: [message] };
+    }
+  }
+
+  if (body.intent === "assist") {
+    // Changes the draft in the editor; the merchant reads it and saves.
+    const shopRow = await prisma.shop.findUniqueOrThrow({ where: { domain: session.shop } });
+    const access = await assistantAccess(shopRow);
+    if (!access.allowed) return { ok: false, errors: [access.reason ?? "The assistant isn't available on this plan."] };
+
+    const { data } = parseDealInput(body.deal ?? {});
+    const instruction = String((body as { instruction?: string }).instruction ?? "");
+    try {
+      const draft = await editDeal(
+        { name: data.name, type: data.type as DealTypeKey, config: normalizeConfig(data.config, data.type as DealTypeKey) },
+        instruction,
+      );
+      await countAssistantUse(shopRow.id, shopRow.settings);
+      return { ok: true, errors: [] as string[], assisted: { config: draft.config, note: draft.note } };
+    } catch (error) {
+      const message = error instanceof AssistantError ? error.message : "The assistant could not answer. Try again.";
+      console.error("Assistant edit failed", error);
       return { ok: false, errors: [message] };
     }
   }
@@ -279,6 +308,7 @@ function DealEditor({ data }: { data: LoaderData }) {
   const [previewLoading, setPreviewLoading] = useState(false);
   // The language an auto-translation is running for.
   const [translating, setTranslating] = useState<string | null>(null);
+  const [assisting, setAssisting] = useState(false);
 
   const loadPreviewProduct = useCallback(async (id: string) => {
     setPreviewLoading(true);
@@ -303,6 +333,19 @@ function DealEditor({ data }: { data: LoaderData }) {
   const dirty = isNew || JSON.stringify(deal) !== baseline;
   const saving = fetcher.state !== "idle";
   const result = fetcher.data;
+
+  // A finished assistant edit replaces the draft's config; the merchant saves.
+  useEffect(() => {
+    const payload = fetcher.data as { assisted?: { config: DealConfig; note?: string } } | undefined;
+    if (fetcher.state !== "idle" || !payload?.assisted || !assisting) return;
+    const { config: next, note } = payload.assisted;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setAssisting(false);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setDeal((d) => ({ ...d, config: next }));
+    shopify.toast.show(note || "Changed. Check the deal, then save.");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetcher.state, fetcher.data]);
 
   // A finished auto-translation fills the draft (the merchant saves it).
   useEffect(() => {
@@ -755,6 +798,19 @@ function DealEditor({ data }: { data: LoaderData }) {
 
       {/* ---------------- Metafield variables ---------------- */}
       <MetafieldVarsEditor vars={config.metafieldVars} onChange={(metafieldVars) => patchConfig({ metafieldVars })} />
+
+      {/* ---------------- Assistant ---------------- */}
+      <AssistantPanel
+        access={data.assistant}
+        busy={assisting}
+        onAsk={(instruction) => {
+          setAssisting(true);
+          fetcher.submit({ intent: "assist", instruction, deal } as unknown as Record<string, string>, {
+            method: "post",
+            encType: "application/json",
+          });
+        }}
+      />
 
       {/* ---------------- Translations ---------------- */}
       {data.locales.length > 1 ? (
@@ -1709,6 +1765,50 @@ function AbTestPanel({
             </s-table>
           </s-stack>
         ) : null}
+      </s-stack>
+    </s-section>
+  );
+}
+
+/** Changing the deal in plain English. The answer lands in the editor unsaved. */
+function AssistantPanel({
+  access,
+  busy,
+  onAsk,
+}: {
+  access: { allowed: boolean; used: number; limit: number; reason?: string; configured: boolean };
+  busy: boolean;
+  onAsk: (instruction: string) => void;
+}) {
+  const t = useT();
+  const [instruction, setInstruction] = useState("");
+  const off = !access.configured || !access.allowed;
+
+  return (
+    <s-section heading={t("Ask the assistant")}>
+      <s-stack gap="base">
+        <s-paragraph color="subdued">
+          {t("Describe a change and the assistant rewrites the deal here. Nothing is saved until you save it.")}
+        </s-paragraph>
+        {!access.configured ? (
+          <s-banner tone="warning">{t("The assistant needs an AI API key on the server (CARTLIFT_AI_KEY).")}</s-banner>
+        ) : !access.allowed && access.reason ? (
+          <s-banner tone="info">{access.reason}</s-banner>
+        ) : null}
+        <TextField
+          label={t("What should change?")}
+          value={instruction}
+          placeholder={t("e.g. add a third tier at 25% off and make the middle one 'Most popular'")}
+          onChange={setInstruction}
+        />
+        <s-stack direction="inline" gap="base" alignItems="center">
+          <s-button loading={busy || undefined} disabled={off || undefined} onClick={() => onAsk(instruction)}>
+            {t("Rewrite the deal")}
+          </s-button>
+          {access.configured && access.allowed ? (
+            <s-text color="subdued">{t("Today: {{used}} of {{limit}} requests used.", { used: access.used, limit: access.limit })}</s-text>
+          ) : null}
+        </s-stack>
       </s-stack>
     </s-section>
   );

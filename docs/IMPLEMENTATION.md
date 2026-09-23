@@ -428,6 +428,25 @@ usage line + monthly `appUsageRecordCreate` for overage).
 
 **Exit:** PARITY 1.10 ✅ → 100%.
 
+### 7.5 How it was actually built (2026-09-23)
+- **No tool-calling loop.** Each job is one request that must answer with JSON:
+  a deal from a prompt, from a page's text, from a screenshot, or a rewrite of
+  the open deal. That is cheaper, predictable, and easy to validate — and the
+  thing a merchant wants is a draft to look at, not an agent with write access.
+- **The model never writes to the store.** Drafts are saved `DRAFT`; the editor
+  panel changes the form, not the database. Everything passes through
+  `normalizeConfig` + `validateConfig` first, so an odd answer is an error.
+- **The prompt was tuned against the real API**, which caught three faults a
+  test with a mocked answer never would: a quantity break typed as a BUNDLE, a
+  free gift silently dropped, and "buy one get one free" written as an invalid
+  BXGY bar. The rules about types, gifts and `qty`/`get` in `SYSTEM` are the fix.
+- **Reading a page the merchant names** happens on our server, so `safeUrl`
+  refuses anything but public http(s) — in particular `169.254.169.254` and the
+  private ranges — and the final URL after redirects is checked again.
+- **Cost** is held down by plan gating plus a daily count in `Shop.settings.ai`,
+  the small model for translation and the big one only for writing deals, and by
+  sending the model a trimmed config (no colours, arms or translations) on edits.
+
 ---
 
 ## After parity — differentiators (optional)

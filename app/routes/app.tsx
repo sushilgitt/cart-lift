@@ -52,6 +52,7 @@ function Nav() {
     <s-app-nav>
       <s-link href="/app">{t("Dashboard")}</s-link>
       <s-link href="/app/deals">{t("Deals")}</s-link>
+      <s-link href="/app/assistant">{t("Assistant")}</s-link>
       <s-link href="/app/analytics">{t("Analytics")}</s-link>
       <s-link href="/app/settings">{t("Settings")}</s-link>
       <s-link href="/app/plans">{t("Plans")}</s-link>

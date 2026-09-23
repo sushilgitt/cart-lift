@@ -109,10 +109,10 @@ Legend: ✅ done · 🟡 partial · ❌ missing
 | Custom element `<…-bundle product-id>` inside product form | ✅ `<cartlift-bundle>` |
 | JS events: bar selected / variant selected / variants changed (with quantities + price) | ✅ |
 | `?…=off` debug switch | ✅ |
-| Page builders: PageFly, GemPages, EComposer, Foxify, Instant, Replo | ❌ untested |
-| Cart drawers: UpCart | ❌ untested |
-| Headless: Hydrogen package, React package | ❌ |
-| 2048 Variants, Rubik Variant Images compatibility | ❌ untested |
+| Page builders: PageFly, GemPages, EComposer, Foxify, Instant, Replo | 🟡 the widget survives late-rendered and rebuilt forms (tested with a simulated builder); not tested against the real products |
+| Cart drawers: UpCart | 🟡 Dawn pub/sub + the usual refresh events, and a `window.CartLift.onCartUpdated` hook for anything else; not tested against the real drawers |
+| Headless: Hydrogen package, React package | ✅ `packages/headless` (targeting, pricing, cart lines + React component) and a Hydrogen example |
+| 2048 Variants, Rubik Variant Images compatibility | 🟡 works through the form's `[name="id"]`; untested against the apps |
 
 ### 1.9 Analytics & A/B
 | Kaching (Analytics 2.0) | CartLift |
@@ -132,12 +132,12 @@ Legend: ✅ done · 🟡 partial · ❌ missing
 | Kaching | CartLift |
 |---|---|
 | Dashboard with added revenue, templates page, onboarding | ✅ |
-| "Ching" AI assistant — build from prompt/screenshot/URL, edit in plain English, diagnose setup, translations | ❌ |
+| "Ching" AI assistant — build from prompt/screenshot/URL, edit in plain English, diagnose setup, translations | ✅ build from prompt / URL / screenshot, edit in plain English, translations (Phase 5). Diagnosis is the Settings troubleshooting panel, not the assistant |
 | Plans on added revenue: $14.99 / $29.99 / $59.99 (+ monthly caps) | ✅ |
-| Flex tiers $99 / $149 / $199 / $299 (to $50K+) | ❌ |
-| Annual plans (~27% off), 7-day trial | ❌ (Partner dashboard config) |
-| Dev stores free, no free production plan | 🟡 we offer a Free plan ($250 cap) |
-| Auto-upgrade when cap passed | ❌ (needs merchant approval under managed pricing — see Phase 6) |
+| Flex tiers $99 / $149 / $199 / $299 (to $50K+) | ✅ Flex 20K/30K/40K/50K |
+| Annual plans (~27% off), 7-day trial | ✅ shown in the app; the prices themselves are Partner dashboard config |
+| Dev stores free, no free production plan | ✅ dev stores free; 🟡 we also keep a Free plan ($250 cap) |
+| Auto-upgrade when cap passed | 🟡 **deliberate difference**: managed pricing needs merchant approval, so CartLift names the plan that would cover the month instead of switching. Deals never pause |
 | Keep deals after uninstall / restore | ✅ (until shop/redact) |
 
 ---
@@ -237,7 +237,7 @@ widget adds, gifts always one-time.
 **Left for later:** validation messages from the server stay English; subscription
 behaviour is untested against a live subscription app (Shopify Subscriptions, Loop).
 
-### Phase 6 — Billing & ecosystem (≈2–3 weeks) → ~97%
+### Phase 6 — Billing & ecosystem (≈2–3 weeks) → ~97%  ✅ built 2026-09-23
 Closes 1.8 and billing rows of 1.10.
 - Plans: 7 tiers to $299, annual variants, 7-day trial, dev stores free.
   **Decided 2026-09-22: keep CartLift's Free plan** (a deliberate difference from Kaching). Kaching auto-upgrades; managed pricing needs merchant
@@ -247,11 +247,32 @@ Closes 1.8 and billing rows of 1.10.
   Replo, UpCart, 2048 Variants, variant-image apps.
 - Headless: React component package and Hydrogen example.
 
-### Phase 7 — AI assistant (≈3 weeks) → ~100%
+**Built:** four Flex tiers to $299, annual prices and the trial shown in-app,
+development stores free (`Shop.devStore`), and an over-limit prompt that names
+the plan covering the month. A/B testing, advertised as paid, is now actually
+gated. The widget re-mounts when a page builder renders or rebuilds the product
+form, cart drawers get `window.CartLift.onCartUpdated`, and `packages/headless`
+gives a headless storefront the same targeting, pricing and — crucially — the
+line attributes checkout reads. See `docs/COMPATIBILITY.md`.
+**Left for later:** the compatibility matrix is reasoned, not verified — no real
+page builder or drawer app has been run against it.
+
+### Phase 7 — AI assistant (≈3 weeks) → ~100%  ✅ built 2026-09-23
 Closes the AI row of 1.10.
 - In-admin assistant (Claude API): create a deal from a prompt, a screenshot or a
   competitor URL; edit a deal in plain English; diagnose "not showing" issues
   (embed off, deal paused, targeting, market); help with translations and market pricing.
+
+**Built:** an Assistant page (prompt / page address / screenshot → a *draft* deal,
+saved as DRAFT so nothing can reach a storefront unreviewed) and an "Ask the
+assistant" panel in the editor that rewrites the open deal. Everything the model
+returns goes through the editor's own `normalizeConfig` + `validateConfig`, so a
+bad answer is an error rather than a broken deal. Access is gated by plan with a
+daily count (`DAILY_LIMIT`), and the provider is configuration, not code
+(`app/lib/ai.server.ts`) — this app runs it on an OpenAI-compatible endpoint.
+**Deliberately not built:** diagnosis stayed in Settings → Troubleshooting, where
+deterministic checks beat asking a model; market pricing is per-deal duplication
+as before.
 
 **Total:** roughly 21–25 developer-weeks. Phases 3–7 can be reordered by
 business priority; 1 → 2 is a hard dependency (bundle-upsell needs the bar model
