@@ -19,6 +19,7 @@
     "cols": { {{ cl_cols }} "_": [] },
     "count": {{ cart.item_count | default: 0 }},
     "root": {{ routes.root_url | json }},
+    "country": {{ localization.country.iso_code | json }},
     "template": {{ template.name | json }}
   }
 </script>

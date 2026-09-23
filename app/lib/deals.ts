@@ -230,6 +230,8 @@ export interface DealConfig {
   showVariantPicker: boolean;
   /** Up to 4 text variables filled from product metafields. */
   metafieldVars: MetafieldVar[];
+  /** Markets the deal runs in (empty = all). */
+  markets: ResourceRef[];
   /** A bar also gets the gifts of every smaller bar. */
   progressiveGifts: boolean;
   mixMatch: MixMatch;
@@ -572,6 +574,7 @@ export function defaultConfig(type: DealTypeKey): DealConfig {
     variantPerUnit: false,
     showVariantPicker: true,
     metafieldVars: [],
+    markets: [],
     progressiveGifts: false,
     mixMatch: { ...DEFAULT_MIX_MATCH },
     abTest: { ...DEFAULT_AB_TEST, weights: { A: 100 }, arms: {} },
@@ -753,6 +756,7 @@ export function normalizeConfig(raw: unknown, type: DealTypeKey = "QUANTITY_BREA
           .map((m) => ({ name: str(m?.name).trim(), namespace: str(m?.namespace).trim(), key: str(m?.key).trim() }))
           .slice(0, 4)
       : [],
+    markets: refs(r.markets, 50),
     discountName: str(r.discountName),
   };
 }

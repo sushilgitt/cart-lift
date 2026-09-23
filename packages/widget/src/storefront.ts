@@ -58,10 +58,12 @@ function matchDeal(data: SfData): SfDeal | undefined {
   const deals = data.config?.deals || [];
   const pid = Number(data.product.id);
   const cols = (data.collections || []).map(Number);
+  const country = data.country || "";
   return deals.find(
     (d) =>
       isLive(d) &&
       d.bars?.length > 0 &&
+      (!d.ctry?.length || d.ctry.includes(country)) &&
       matchesTarget(d, pid, (c) => cols.includes(Number(c))) === true,
   );
 }

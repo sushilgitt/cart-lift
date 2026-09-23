@@ -4,6 +4,7 @@
     "target": "cart.lines.discounts.generate.run",
     "input": {
       "presentmentCurrencyRate": "1.0",
+        "localization": {"country": {"isoCode": "US"}},
       "cart": {
         "lines": [
           {

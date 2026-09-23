@@ -32,6 +32,7 @@ interface WatcherGlobal {
 
 interface CartData {
   config: GiftConfig & { g?: boolean };
+  country?: string;
   cols?: Record<string, number[]>;
   count?: number;
   root?: string;
@@ -63,7 +64,13 @@ function start() {
   if (/[?&]cartlift=off\b/.test(window.location.search)) return;
   if (typeof window.fetch !== "function" || typeof Promise === "undefined") return;
 
-  const config = data.config;
+  // Deals limited to markets only apply in their countries.
+  const country = data.country || "";
+  const config = {
+    ...data.config,
+    deals: data.config.deals.filter((d) => !d.ctry?.length || d.ctry.includes(country)),
+  };
+  if (!config.deals.length) return;
   let root = w.Shopify?.routes?.root || data.root || "/";
   if (root.charAt(root.length - 1) !== "/") root += "/";
   const nativeFetch = window.fetch.bind(window);

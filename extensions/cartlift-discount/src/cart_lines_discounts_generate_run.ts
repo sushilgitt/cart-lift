@@ -24,6 +24,7 @@ import { bundleSets, dealMatches, reachedBar } from "../../../packages/core/src"
  *    on the group's lines says which one the shopper picked, else the first.
  *  - Gift, upsell and bundle lines never count toward tiers.
  *  - Mix & match deals also count the products of their pool (`mm`).
+ *  - A deal limited to markets (`ctry`) only runs for those countries.
  *  - Complete-the-bundle bars (`k: "b"`) discount the lines tagged
  *    `_cartlift_bundle=<dealId>:<barId>`, each item per its own rule, for
  *    complete sets only.
@@ -86,6 +87,8 @@ export interface FnDeal {
   across?: boolean;
   /** Mix & match pool. */
   mm?: Targeting;
+  /** Countries of the deal's markets (empty / missing = everywhere). */
+  ctry?: string[];
   name: string;
   bars: FnBar[];
   arms?: Record<string, FnBar[]>;
@@ -291,7 +294,8 @@ export function cartLinesDiscountsGenerateRun(
   if (!input.discount.discountClasses.includes(DiscountClass.Product)) return empty;
 
   const config = (input.discount.metafield?.jsonValue ?? {}) as FnConfig;
-  const deals = config.deals ?? [];
+  const country = input.localization?.country?.isoCode ?? null;
+  const deals = (config.deals ?? []).filter((d) => !d.ctry?.length || (country != null && d.ctry.includes(country)));
   if (!deals.length || !input.cart.lines.length) return empty;
 
   const rate = Number(input.presentmentCurrencyRate) || 1;

@@ -59,7 +59,53 @@ function discountMessage(bar: Bar, dealName: string, discountName: string) {
   return !text || text.includes("{{") ? dealName : text;
 }
 
-export function buildFunctionConfig(deals: Deal[]) {
+/**
+ * Country codes per market (read_markets). Deals limited to markets are
+ * published with their countries, because the Function sees the buyer's
+ * country, not the market.
+ */
+export async function marketCountries(admin: AdminGraphql): Promise<Map<string, string[]>> {
+  const out = new Map<string, string[]>();
+  try {
+    const data = await gql<{
+      markets: {
+        nodes: { id: string; conditions: { regionsCondition: { regions: { nodes: { code?: string }[] } } | null } | null }[];
+      };
+    }>(
+      admin,
+      `#graphql
+        query cartliftMarkets {
+          markets(first: 50) {
+            nodes {
+              id
+              conditions {
+                regionsCondition { regions(first: 250) { nodes { ... on MarketRegionCountry { code } } } }
+              }
+            }
+          }
+        }`,
+    );
+    for (const m of data.markets.nodes) {
+      const codes = (m.conditions?.regionsCondition?.regions.nodes ?? [])
+        .map((r) => r.code)
+        .filter((c): c is string => Boolean(c));
+      out.set(m.id, codes);
+    }
+  } catch (error) {
+    console.error("Markets read failed", error);
+  }
+  return out;
+}
+
+/** The countries a deal runs in (empty = everywhere). */
+export function dealCountries(config: DealConfig, countries: Map<string, string[]>): string[] {
+  if (!config.markets.length) return [];
+  const codes = new Set<string>();
+  for (const market of config.markets) for (const code of countries.get(market.id) ?? []) codes.add(code);
+  return [...codes];
+}
+
+export function buildFunctionConfig(deals: Deal[], countries = new Map<string, string[]>()) {
   const collectionIds = new Set<string>();
   const out = deals.map((deal) => {
     const config = normalizeConfig(deal.config, deal.type as DealTypeKey);
@@ -78,6 +124,7 @@ export function buildFunctionConfig(deals: Deal[]) {
       c: collections,
       across: config.across,
       ...(pool ? { mm: { tt: pool.tt, p: pool.products.map((p) => p.id), c: pool.collections.map((c) => c.id) } } : {}),
+      ...(dealCountries(config, countries).length ? { ctry: dealCountries(config, countries) } : {}),
       name: deal.name,
       bars,
       ...(arms.length ? { arms: Object.fromEntries(arms.map((k) => [k, functionBars(armConfig(config, k), deal.name)])) } : {}),
@@ -114,7 +161,7 @@ function functionBars(config: DealConfig, dealName: string) {
   }));
 }
 
-export function buildStorefrontConfig(shop: Shop, deals: Deal[], appUrl: string) {
+export function buildStorefrontConfig(shop: Shop, deals: Deal[], appUrl: string, countries = new Map<string, string[]>()) {
   const settings = (shop.settings ?? {}) as { customCss?: string; brandPalette?: unknown };
   const palette = normalizePalette(settings.brandPalette);
   // Product metafields the deals use as text variables; Liquid renders their values.
@@ -129,7 +176,13 @@ export function buildStorefrontConfig(shop: Shop, deals: Deal[], appUrl: string)
     api: appUrl,
     css: settings.customCss ?? "",
     mf: [...mf.values()],
-    deals: deals.map((deal) => storefrontDeal({ ...deal, type: deal.type as DealTypeKey }, palette)),
+    deals: deals.map((deal) => ({
+      ...storefrontDeal({ ...deal, type: deal.type as DealTypeKey }, palette),
+      ...(() => {
+        const ctry = dealCountries(normalizeConfig(deal.config, deal.type as DealTypeKey), countries);
+        return ctry.length ? { ctry } : {};
+      })(),
+    })),
   };
 }
 
@@ -139,7 +192,7 @@ export function buildStorefrontConfig(shop: Shop, deals: Deal[], appUrl: string)
  * order — a deal without gifts can still claim a line before a later one.
  * IDs are numeric to match the Ajax Cart API.
  */
-export function buildGiftConfig(deals: Deal[]) {
+export function buildGiftConfig(deals: Deal[], countries = new Map<string, string[]>()) {
   const id = (gid: string) => Number(numericId(gid));
   const giftBars = (config: DealConfig) =>
     config.bars.map((bar) => {
@@ -164,6 +217,7 @@ export function buildGiftConfig(deals: Deal[]) {
       c: refs(deal.collections).map((c) => id(c.id)),
       across: config.across,
       ...(pool ? { mm: { tt: pool.tt, p: pool.products.map((p) => id(p.id)), c: pool.collections.map((c) => id(c.id)) } } : {}),
+      ...(dealCountries(config, countries).length ? { ctry: dealCountries(config, countries) } : {}),
       bars: giftBars(config),
       ...(arms.length ? { arms: Object.fromEntries(arms.map((k) => [k, giftBars(armConfig(config, k))])) } : {}),
     };
@@ -263,9 +317,12 @@ export async function syncShop(
   const live = all.filter((d) => isLive(d));
 
   const appUrl = process.env.SHOPIFY_APP_URL || "";
-  const functionConfig = JSON.stringify(buildFunctionConfig(live));
-  const storefrontConfig = JSON.stringify(buildStorefrontConfig(shop, live, appUrl));
-  const giftConfig = JSON.stringify(buildGiftConfig(live));
+  // Only ask Shopify about markets when a deal is limited to some.
+  const usesMarkets = live.some((d) => normalizeConfig(d.config, d.type as DealTypeKey).markets.length);
+  const countries = usesMarkets ? await marketCountries(admin) : new Map<string, string[]>();
+  const functionConfig = JSON.stringify(buildFunctionConfig(live, countries));
+  const storefrontConfig = JSON.stringify(buildStorefrontConfig(shop, live, appUrl, countries));
+  const giftConfig = JSON.stringify(buildGiftConfig(live, countries));
   const hash = createHash("sha256")
     .update(functionConfig)
     .update(storefrontConfig)

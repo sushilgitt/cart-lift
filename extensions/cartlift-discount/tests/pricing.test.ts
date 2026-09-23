@@ -20,10 +20,11 @@ type LineSpec = {
   complementary?: string[];
 };
 
-function input(config: FnConfig, lines: LineSpec[], rate = 1) {
+function input(config: FnConfig, lines: LineSpec[], rate = 1, country = "US") {
   const ids = config.collectionIds ?? [];
   return {
     presentmentCurrencyRate: String(rate),
+    localization: { country: { isoCode: country } },
     cart: {
       lines: lines.map((l, i) => ({
         id: l.id ?? `gid://shopify/CartLine/${i + 1}`,
@@ -507,5 +508,26 @@ describe("mix & match pool", () => {
       { qty: 2, price: 12, product: "gid://shopify/Product/7", variant: "gid://shopify/ProductVariant/70", deal: "d1" },
     ];
     expect(candidates(cartLinesDiscountsGenerateRun(input(config, lines)))).toHaveLength(0);
+  });
+});
+
+describe("markets", () => {
+  const config: FnConfig = {
+    deals: [
+      { id: "eu", tt: "ALL", ctry: ["DE", "FR"], name: "EU deal", bars: [{ id: "b", q: 2, k: "q", dt: "percentage", dv: 20, m: "EU" }] },
+      { id: "all", tt: "ALL", name: "Everywhere", bars: [{ id: "b", q: 2, k: "q", dt: "percentage", dv: 10, m: "All" }] },
+    ],
+  };
+  const two = [{ qty: 2, price: 10 }];
+
+  test("a deal limited to markets applies only in their countries", () => {
+    expect(candidates(cartLinesDiscountsGenerateRun(input(config, two, 1, "DE")))[0].message).toBe("EU");
+    // Outside its countries the next deal takes the line.
+    expect(candidates(cartLinesDiscountsGenerateRun(input(config, two, 1, "US")))[0].message).toBe("All");
+  });
+
+  test("unknown country: only unrestricted deals run", () => {
+    const onlyEu: FnConfig = { deals: [config.deals![0]] };
+    expect(candidates(cartLinesDiscountsGenerateRun(input(onlyEu, two, 1, "")))).toHaveLength(0);
   });
 });

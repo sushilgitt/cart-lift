@@ -6,6 +6,7 @@ import { SaveBar, useAppBridge } from "@shopify/app-bridge-react";
 import prisma from "../db.server";
 import { authenticate } from "../shopify.server";
 import { getDeal, nextPriority, parseDealInput, shopIdFor } from "../lib/deal.server";
+import { gql } from "../lib/shop.server";
 import { syncShop } from "../lib/sync.server";
 import { abResult, MIN_ORDERS_PER_ARM } from "../../packages/core/src";
 import {
@@ -64,13 +65,26 @@ import { DealPreview } from "../components/DealPreview";
 const TYPES: DealTypeKey[] = ["QUANTITY_BREAK", "BXGY", "BUNDLE"];
 
 export const loader = async ({ request, params }: LoaderFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
   const shop = await prisma.shop.findUnique({
     where: { domain: session.shop },
     select: { moneyFormat: true, currencyCode: true, settings: true },
   });
   const moneyFormat = (shop?.moneyFormat || "${{amount}}").replace(/<[^>]*>/g, "");
   const palette = normalizePalette((shop?.settings as { brandPalette?: unknown } | null)?.brandPalette);
+
+  // Markets to limit a deal to (read_markets). Empty when the store has one market.
+  let markets: { id: string; name: string }[] = [];
+  try {
+    const data = await gql<{ markets: { nodes: { id: string; name: string; status: string }[] } }>(
+      admin,
+      `#graphql
+        query cartliftMarketList { markets(first: 50) { nodes { id name status } } }`,
+    );
+    markets = data.markets.nodes.filter((m) => m.status === "ACTIVE").map((m) => ({ id: m.id, name: m.name }));
+  } catch (error) {
+    console.error("Markets list failed", error);
+  }
 
   if (params.id === "new") {
     const url = new URL(request.url);
@@ -84,6 +98,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     return {
       ab: null,
       palette,
+      markets,
       isNew: true,
       moneyFormat,
       currency: shop?.currencyCode ?? "USD",
@@ -129,6 +144,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   return {
     ab,
     palette,
+    markets,
     isNew: false,
     moneyFormat,
     currency: shop?.currencyCode ?? "USD",
@@ -549,6 +565,28 @@ function DealEditor({ data }: { data: LoaderData }) {
             checked={config.across}
             onChange={(across) => patchConfig({ across })}
           />
+          {data.markets.length > 1 ? (
+            <s-stack gap="small-200">
+              <s-text type="strong">Markets</s-text>
+              <s-paragraph color="subdued">Pick none to run this deal in every market.</s-paragraph>
+              <s-stack direction="inline" gap="base">
+                {data.markets.map((market) => (
+                  <Checkbox
+                    key={market.id}
+                    label={market.name}
+                    checked={config.markets.some((m) => m.id === market.id)}
+                    onChange={(on) =>
+                      patchConfig({
+                        markets: on
+                          ? [...config.markets, { id: market.id, title: market.name }]
+                          : config.markets.filter((m) => m.id !== market.id),
+                      })
+                    }
+                  />
+                ))}
+              </s-stack>
+            </s-stack>
+          ) : null}
           <Grid>
             <DateTimeField label="Start (optional)" value={toLocalInput(deal.startsAt)} onChange={(v) => patch({ startsAt: fromLocalInput(v) })} />
             <DateTimeField label="End (optional)" value={toLocalInput(deal.endsAt)} onChange={(v) => patch({ endsAt: fromLocalInput(v) })} />

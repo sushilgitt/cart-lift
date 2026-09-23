@@ -1,5 +1,11 @@
 query CartInput($collectionIds: [ID!]) {
   presentmentCurrencyRate
+  # The buyer's country: deals limited to markets run only in their countries.
+  localization {
+    country {
+      isoCode
+    }
+  }
   cart {
     lines {
       id

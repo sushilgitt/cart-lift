@@ -563,3 +563,13 @@ describe("Phase 4: design", () => {
     expect(el.querySelector("a")?.getAttribute("href")).toBeNull();
   });
 });
+
+describe("Phase 5: markets", () => {
+  const euOnly = deal([bar({ id: "b1", qty: 2, dt: "percentage", dv: 10, selected: true })], { ctry: ["DE", "FR"] });
+
+  test("the widget shows a market deal only in its countries", () => {
+    expect(productPage(euOnly, { extra: { country: "DE" } }).$(".cl-block")).not.toBeNull();
+    expect(productPage(euOnly, { extra: { country: "US" } }).$(".cl-block")).toBeNull();
+    expect(productPage(euOnly).$(".cl-block")).toBeNull();
+  });
+});

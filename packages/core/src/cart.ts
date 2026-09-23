@@ -44,6 +44,8 @@ export interface GiftDeal extends Targeted<number> {
   bars: GiftBar[];
   /** Running A/B test: each arm's bars (lines carry `_cartlift_arm`). */
   arms?: Record<string, GiftBar[]>;
+  /** Countries of the deal's markets (missing = everywhere). */
+  ctry?: string[];
 }
 
 /** Bars of an arm, as the Function picks them. */

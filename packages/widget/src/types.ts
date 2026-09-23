@@ -155,6 +155,8 @@ export interface SfDeal {
   bars: SfBar[];
   /** Mix & match: shoppers fill the bar's units with products from this pool. */
   mm?: SfMixMatch;
+  /** Countries of the deal's markets (missing = everywhere). */
+  ctry?: string[];
   /** A/B arms (Phase 3). */
   arms?: SfArm[];
   weightA?: number;
@@ -207,6 +209,8 @@ export interface SfData {
   mf?: Record<string, unknown>;
   moneyFormat: string;
   shop: string;
+  /** The storefront's country (Shopify markets). */
+  country?: string;
   placement: "auto" | "block";
 }
 
