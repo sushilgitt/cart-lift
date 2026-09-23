@@ -25,7 +25,11 @@ cd extensions/cartlift-discount && npx vitest run   # function tests
 | `SHOPIFY_APP_URL` | Public URL, e.g. https://cartlift.91.239.208.85.sslip.io |
 | `SCOPES` | Same as `shopify.app.toml` |
 | `DATABASE_URL` | Postgres connection string |
+| `ANTHROPIC_API_KEY` | Auto-translate (deal texts and widget words). Without it the rest of the app works and "Translate automatically" says the key is missing. |
+| `CARTLIFT_TRANSLATE_MODEL` | Optional; defaults to `claude-opus-5`. |
 
 ## Deploy
 - App server: Coolify (Dockerfile build from `main`).
-- Extensions + app config: `npx shopify app deploy`.
+- Extensions + app config: `npx shopify app deploy --allow-updates`.
+- Order: extensions first, then the server — a new Function reads the config the
+  old server publishes, but not the other way round.
