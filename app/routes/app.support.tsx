@@ -165,6 +165,11 @@ export default function Support() {
             </s-button>
             {d.left ? null : <s-text color="subdued">{t("You've reached today's message limit.")}</s-text>}
           </s-stack>
+          {d.email ? (
+            <s-text color="subdued">
+              {t("Or email us at")} <s-link href={`mailto:${d.email}`}>{d.email}</s-link>
+            </s-text>
+          ) : null}
         </s-stack>
       </s-section>
 
