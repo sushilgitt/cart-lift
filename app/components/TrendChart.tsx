@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from "react";
+import { useT } from "../lib/admin-i18n";
 
 /**
  * One metric over time: this period (solid, categorical slot 1) against the
@@ -39,6 +40,7 @@ export function TrendChart({
   points: TrendPoint[];
   format: (n: number) => string;
 }) {
+  const t = useT();
   const [hover, setHover] = useState<number | null>(null);
   const overlay = useRef<SVGRectElement>(null);
 
@@ -92,11 +94,11 @@ export function TrendChart({
       <div className="viz-legend" aria-hidden="true">
         <span className="viz-key">
           <svg width="18" height="4"><line x1="0" y1="2" x2="18" y2="2" stroke="var(--series-1)" strokeWidth="2" strokeLinecap="round" /></svg>
-          This period
+          {t("This period")}
         </span>
         <span className="viz-key">
           <svg width="18" height="4"><line x1="0" y1="2" x2="18" y2="2" stroke="var(--series-prev)" strokeWidth="2" strokeDasharray="2 3" strokeLinecap="round" /></svg>
-          Previous period
+          {t("Previous period")}
         </span>
       </div>
       <svg
@@ -152,13 +154,13 @@ export function TrendChart({
         </div>
       ) : null}
       <details>
-        <summary style={{ cursor: "pointer", fontSize: 12, color: "var(--text-secondary)", marginTop: 8 }}>Show as a table</summary>
+        <summary style={{ cursor: "pointer", fontSize: 12, color: "var(--text-secondary)", marginTop: 8 }}>{t("Show as a table")}</summary>
         <table className="viz-table">
           <thead>
             <tr>
-              <th>Day</th>
-              <th>This period</th>
-              <th>Previous period</th>
+              <th>{t("Day")}</th>
+              <th>{t("This period")}</th>
+              <th>{t("Previous period")}</th>
             </tr>
           </thead>
           <tbody>

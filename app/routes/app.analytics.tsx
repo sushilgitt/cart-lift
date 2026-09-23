@@ -10,6 +10,7 @@ import { formatMoney } from "../lib/deals";
 import { gql } from "../lib/shop.server";
 import { DEFAULT_COLUMNS, METRICS, PRESETS, TILE_METRICS, formatChange, formatMetric, type MetricKey } from "../lib/metric-defs";
 import { TrendChart } from "../components/TrendChart";
+import { useT } from "../lib/admin-i18n";
 
 const FEATURE_LABELS: Record<string, string> = {
   gift: "Free gifts",
@@ -88,6 +89,7 @@ async function exportCsv(query: string) {
 }
 
 export default function Analytics() {
+  const t = useT();
   const d = useLoaderData<typeof loader>();
   const navigate = useNavigate();
   const [params] = useSearchParams();
@@ -115,9 +117,9 @@ export default function Analytics() {
   const chartDef = METRICS.find((m) => m.key === chartMetric)!;
 
   return (
-    <s-page heading="Analytics">
+    <s-page heading={t("Analytics")}>
       <s-button slot="secondary-actions" onClick={() => exportCsv(params.toString())}>
-        Export CSV
+        {t("Export CSV")}
       </s-button>
 
       {/* Filters: one row above everything */}
@@ -139,21 +141,21 @@ export default function Analytics() {
             }}
           >
             <label style={{ display: "grid", fontSize: 12, gap: 2 }}>
-              From
+              {t("From")}
               <input type="date" name="from" defaultValue={d.fromInput} key={`f${d.fromInput}`} />
             </label>
             <label style={{ display: "grid", fontSize: 12, gap: 2 }}>
-              To
+              {t("To")}
               <input type="date" name="to" defaultValue={d.toInput} key={`t${d.toInput}`} />
             </label>
             <s-button type="submit" variant={d.preset ? "secondary" : "primary"}>
-              Apply
+              {t("Apply")}
             </s-button>
           </form>
           <label style={{ display: "grid", fontSize: 12, gap: 2 }}>
-            Deal
+            {t("Deal")}
             <select value={d.dealId ?? ""} onChange={(e) => go({ deal: e.currentTarget.value || null })}>
-              <option value="">All deals</option>
+              <option value="">{t("All deals")}</option>
               {d.deals.map((deal) => (
                 <option key={deal.id} value={deal.id}>
                   {deal.name}
@@ -173,7 +175,7 @@ export default function Analytics() {
             return (
               <s-box key={key} padding="base" border="base" borderRadius="base">
                 <s-stack gap="small-100">
-                  <s-text color="subdued">{def.label}</s-text>
+                  <s-text color="subdued">{t(def.label)}</s-text>
                   <s-heading>{fmt(key, now)}</s-heading>
                   <s-text color="subdued">
                     {now == null || before == null ? "—" : formatChange(change(now, before))} vs previous
@@ -185,26 +187,26 @@ export default function Analytics() {
         </s-grid>
       </s-section>
 
-      <s-section heading={`${chartDef.label} over time`}>
+      <s-section heading={t("{{metric}} over time", { metric: t(chartDef.label) })}>
         <s-stack gap="base">
           <label style={{ display: "grid", fontSize: 12, gap: 2, maxWidth: 260 }}>
-            Metric
+            {t("Metric")}
             <select value={chartMetric} onChange={(e) => go({ metric: e.currentTarget.value })}>
               {METRICS.map((m) => (
                 <option key={m.key} value={m.key}>
-                  {m.label}
+                  {t(m.label)}
                 </option>
               ))}
             </select>
           </label>
-          <TrendChart title={chartDef.label} points={points} format={(n) => formatMetric(chartDef.kind, n, money)} />
+          <TrendChart title={t(chartDef.label)} points={points} format={(n) => formatMetric(chartDef.kind, n, money)} />
         </s-stack>
       </s-section>
 
-      <s-section heading="Bundles" padding="none">
+      <s-section heading={t("Bundles")} padding="none">
         <s-box padding="base">
           <details>
-            <summary style={{ cursor: "pointer" }}>Columns ({cols.length})</summary>
+            <summary style={{ cursor: "pointer" }}>{t("Columns")} ({cols.length})</summary>
             <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 16px", marginTop: 8 }}>
               {METRICS.map((m) => (
                 <label key={m.key} style={{ fontSize: 13 }}>
@@ -216,7 +218,7 @@ export default function Analytics() {
                       go({ cols: next.join(",") });
                     }}
                   />{" "}
-                  {m.label}
+                  {t(m.label)}
                 </label>
               ))}
             </div>
@@ -224,16 +226,16 @@ export default function Analytics() {
         </s-box>
         {d.bundles.length === 0 ? (
           <s-box padding="base">
-            <s-paragraph>No data yet. Stats appear once shoppers see your deals.</s-paragraph>
+            <s-paragraph>{t("No data yet. Stats appear once shoppers see your deals.")}</s-paragraph>
           </s-box>
         ) : (
           <s-table>
             <s-table-header-row>
-              <s-table-header listSlot="primary">Deal</s-table-header>
-              <s-table-header>Variant</s-table-header>
+              <s-table-header listSlot="primary">{t("Deal")}</s-table-header>
+              <s-table-header>{t("Variant")}</s-table-header>
               {cols.map((c) => (
                 <s-table-header key={c} format="numeric">
-                  {METRICS.find((m) => m.key === c)!.label}
+                  {t(METRICS.find((m) => m.key === c)!.label)}
                 </s-table-header>
               ))}
             </s-table-header-row>
@@ -243,7 +245,7 @@ export default function Analytics() {
                   <s-table-cell>
                     <s-stack direction="inline" gap="small-200" alignItems="center">
                       <s-link href={`/app/deals/${r.dealId}`}>{r.name}</s-link>
-                      {r.abTest ? <s-badge tone="info">A/B</s-badge> : null}
+                      {r.abTest ? <s-badge tone="info">{t("A/B")}</s-badge> : null}
                     </s-stack>
                   </s-table-cell>
                   <s-table-cell>{r.arm}</s-table-cell>
@@ -257,21 +259,21 @@ export default function Analytics() {
         )}
       </s-section>
 
-      <s-section heading="Bars" padding="none">
+      <s-section heading={t("Bars")} padding="none">
         {d.bars.length === 0 ? (
           <s-box padding="base">
-            <s-paragraph color="subdued">Bar results appear with new orders.</s-paragraph>
+            <s-paragraph color="subdued">{t("Bar results appear with new orders.")}</s-paragraph>
           </s-box>
         ) : (
           <s-table>
             <s-table-header-row>
-              <s-table-header listSlot="primary">Bar</s-table-header>
-              <s-table-header>Deal</s-table-header>
-              <s-table-header format="numeric">Add to carts</s-table-header>
-              <s-table-header format="numeric">Orders</s-table-header>
-              <s-table-header format="numeric">Share of deal orders</s-table-header>
-              <s-table-header format="numeric">Units</s-table-header>
-              <s-table-header format="numeric">Revenue</s-table-header>
+              <s-table-header listSlot="primary">{t("Bar")}</s-table-header>
+              <s-table-header>{t("Deal")}</s-table-header>
+              <s-table-header format="numeric">{t("Add to carts")}</s-table-header>
+              <s-table-header format="numeric">{t("Orders")}</s-table-header>
+              <s-table-header format="numeric">{t("Share of deal orders")}</s-table-header>
+              <s-table-header format="numeric">{t("Units")}</s-table-header>
+              <s-table-header format="numeric">{t("Revenue")}</s-table-header>
             </s-table-header-row>
             <s-table-body>
               {d.bars.map((b) => (
@@ -293,21 +295,21 @@ export default function Analytics() {
         )}
       </s-section>
 
-      <s-section heading="Products" padding="none">
+      <s-section heading={t("Products")} padding="none">
         {d.products.length === 0 ? (
           <s-box padding="base">
-            <s-paragraph color="subdued">Product results appear as shoppers view and buy deals.</s-paragraph>
+            <s-paragraph color="subdued">{t("Product results appear as shoppers view and buy deals.")}</s-paragraph>
           </s-box>
         ) : (
           <s-table>
             <s-table-header-row>
-              <s-table-header listSlot="primary">Product</s-table-header>
-              <s-table-header format="numeric">Views</s-table-header>
-              <s-table-header format="numeric">Add to carts</s-table-header>
-              <s-table-header format="numeric">Orders</s-table-header>
-              <s-table-header format="numeric">Units</s-table-header>
-              <s-table-header format="numeric">Revenue</s-table-header>
-              <s-table-header format="numeric">Profit</s-table-header>
+              <s-table-header listSlot="primary">{t("Product")}</s-table-header>
+              <s-table-header format="numeric">{t("Views")}</s-table-header>
+              <s-table-header format="numeric">{t("Add to carts")}</s-table-header>
+              <s-table-header format="numeric">{t("Orders")}</s-table-header>
+              <s-table-header format="numeric">{t("Units")}</s-table-header>
+              <s-table-header format="numeric">{t("Revenue")}</s-table-header>
+              <s-table-header format="numeric">{t("Profit")}</s-table-header>
             </s-table-header-row>
             <s-table-body>
               {d.products.map((p) => (
@@ -326,7 +328,7 @@ export default function Analytics() {
         )}
       </s-section>
 
-      <s-section heading="Features" padding="none">
+      <s-section heading={t("Features")} padding="none">
         {d.features.length === 0 ? (
           <s-box padding="base">
             <s-paragraph color="subdued">Gifts, upsells, bundles and mix & match show here once they sell.</s-paragraph>
@@ -334,11 +336,11 @@ export default function Analytics() {
         ) : (
           <s-table>
             <s-table-header-row>
-              <s-table-header listSlot="primary">Feature</s-table-header>
-              <s-table-header format="numeric">Orders</s-table-header>
-              <s-table-header format="numeric">Share of bundle orders</s-table-header>
-              <s-table-header format="numeric">Units</s-table-header>
-              <s-table-header format="numeric">Revenue</s-table-header>
+              <s-table-header listSlot="primary">{t("Feature")}</s-table-header>
+              <s-table-header format="numeric">{t("Orders")}</s-table-header>
+              <s-table-header format="numeric">{t("Share of bundle orders")}</s-table-header>
+              <s-table-header format="numeric">{t("Units")}</s-table-header>
+              <s-table-header format="numeric">{t("Revenue")}</s-table-header>
             </s-table-header-row>
             <s-table-body>
               {d.features.map((f) => (

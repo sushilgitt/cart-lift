@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import widgetCss from "../../extensions/cartlift-widget/assets/cartlift.css?url";
 import widgetJs from "../../extensions/cartlift-widget/assets/cartlift.js?url";
+import { useT } from "../lib/admin-i18n";
 
 /**
  * Live preview that runs the real storefront renderer (cartlift.js), so what
@@ -37,6 +38,7 @@ function loadWidget() {
 }
 
 export function DealPreview({ deal, ctx }: { deal: PreviewDeal; ctx: PreviewCtx }) {
+  const t = useT();
   const el = useRef<HTMLDivElement>(null);
   const update = useRef<((deal: PreviewDeal, ctx?: PreviewCtx) => void) | null>(null);
   const [ready, setReady] = useState(false);
@@ -62,7 +64,7 @@ export function DealPreview({ deal, ctx }: { deal: PreviewDeal; ctx: PreviewCtx 
   return (
     <>
       <link rel="stylesheet" href={widgetCss} />
-      {!ready ? <s-spinner accessibilityLabel="Loading preview" /> : null}
+      {!ready ? <s-spinner accessibilityLabel={t("Loading preview")} /> : null}
       {/* Owned by cartlift.js — React must never render children in here. */}
       <div ref={el} style={{ minHeight: ready ? 120 : 0 }} />
     </>

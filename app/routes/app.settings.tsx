@@ -23,6 +23,7 @@ import {
   type DealTypeKey,
   type WidgetStrings,
 } from "../lib/deals";
+import { useT } from "../lib/admin-i18n";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { admin, session } = await authenticate.admin(request);
@@ -118,6 +119,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 };
 
 export default function Settings() {
+  const t = useT();
   const d = useLoaderData<typeof loader>();
   const fetcher = useFetcher<typeof action>();
   const shopify = useAppBridge();
@@ -131,29 +133,28 @@ export default function Settings() {
   }, [fetcher.state, fetcher.data]);
 
   return (
-    <s-page heading="Settings">
-      <s-section heading="Theme setup">
+    <s-page heading={t("Settings")}>
+      <s-section heading={t("Theme setup")}>
         <s-stack gap="base">
           <s-stack direction="inline" gap="small-200" alignItems="center">
             <s-text>App embed in {d.themeName ?? "your live theme"}:</s-text>
             {d.embedEnabled === true ? (
-              <s-badge tone="success">On</s-badge>
+              <s-badge tone="success">{t("On")}</s-badge>
             ) : d.embedEnabled === false ? (
-              <s-badge tone="critical">Off</s-badge>
+              <s-badge tone="critical">{t("Off")}</s-badge>
             ) : (
-              <s-badge>Unknown</s-badge>
+              <s-badge>{t("Unknown")}</s-badge>
             )}
           </s-stack>
           <s-paragraph>
-            With the embed on, CartLift places deals above the add-to-cart button automatically. For a custom
-            position, add the “CartLift deals” block to your product template instead.
+            {t("With the embed on, CartLift places deals above the add-to-cart button automatically. For a custom position, add the “CartLift deals” block to your product template instead.")}
           </s-paragraph>
           <s-button-group>
             <s-button href={d.embedUrl} target="_blank" variant="primary">
-              {d.embedEnabled ? "Open app embeds" : "Turn on app embed"}
+              {d.embedEnabled ? t("Open app embeds") : t("Turn on app embed")}
             </s-button>
             <s-button href={d.blockUrl} target="_blank">
-              Add block to product page
+              {t("Add block to product page")}
             </s-button>
           </s-button-group>
         </s-stack>
@@ -178,11 +179,11 @@ export default function Settings() {
         submit={(data) => fetcher.submit(data, { method: "post" })}
       />
 
-      <s-section heading="Custom CSS">
+      <s-section heading={t("Custom CSS")}>
         <s-stack gap="base">
           <TextArea
-            label="CSS added to product pages that show a deal"
-            details="Target .cl-block, .cl-bar, .cl-bar.is-selected, .cl-badge, .cl-price and so on."
+            label={t("CSS added to product pages that show a deal")}
+            details={t("Target .cl-block, .cl-bar, .cl-bar.is-selected, .cl-badge, .cl-price and so on.")}
             value={css}
             onChange={setCss}
             rows={8}
@@ -192,23 +193,23 @@ export default function Settings() {
               loading={fetcher.state !== "idle" || undefined}
               onClick={() => fetcher.submit({ intent: "css", customCss: css }, { method: "post" })}
             >
-              Save CSS
+              {t("Save CSS")}
             </s-button>
           </div>
         </s-stack>
       </s-section>
 
-      <s-section heading="Troubleshooting">
+      <s-section heading={t("Troubleshooting")}>
         <s-stack gap="base">
           <s-paragraph>
             Last published: {d.publishedAt ? new Date(d.publishedAt).toLocaleString() : "never"}.
-            {d.discountId ? " The CartLift automatic discount is installed." : " The CartLift discount is created when you save your first deal."}
+            {d.discountId ? t(" The CartLift automatic discount is installed.") : t(" The CartLift discount is created when you save your first deal.")}
           </s-paragraph>
           <s-paragraph>
-            Add <code>?cartlift=off</code> to any product URL to view the page without CartLift.
+            Add <code>?cartlift=off</code> {t("to any product URL to view the page without CartLift.")}
           </s-paragraph>
           <div>
-            <s-button onClick={() => fetcher.submit({ intent: "republish" }, { method: "post" })}>Republish deals</s-button>
+            <s-button onClick={() => fetcher.submit({ intent: "republish" }, { method: "post" })}>{t("Republish deals")}</s-button>
           </div>
         </s-stack>
       </s-section>
@@ -234,6 +235,7 @@ function WidgetText({
   result: unknown;
   busy: boolean;
 }) {
+  const t = useT();
   const others = locales.filter((l) => !l.primary);
   const [locale, setLocale] = useState(others[0]?.locale ?? "");
   const [strings, setStrings] = useState(initial);
@@ -252,14 +254,14 @@ function WidgetText({
   }, [result, locale, translated]);
 
   return (
-    <s-section heading="Widget text">
+    <s-section heading={t("Widget text")}>
       <s-stack gap="base">
         <s-paragraph>
-          The words CartLift adds itself. Leave a field empty to keep the English text.
+          {t("The words CartLift adds itself. Leave a field empty to keep the English text.")}
         </s-paragraph>
         <s-stack direction="inline" gap="base" alignItems="end">
           <Select
-            label="Language"
+            label={t("Language")}
             value={locale}
             onChange={setLocale}
             options={others.map((l) => ({ value: l.locale, label: `${l.name} (${l.locale})` }))}
@@ -268,10 +270,10 @@ function WidgetText({
             loading={busy || undefined}
             onClick={() => language && submit({ intent: "translate-strings", language: `${language.name} (${language.locale})` })}
           >
-            Translate automatically
+            {t("Translate automatically")}
           </s-button>
           <s-button variant="primary" onClick={() => submit({ intent: "strings", strings: JSON.stringify(strings) })}>
-            Save text
+            {t("Save text")}
           </s-button>
         </s-stack>
         <Grid>
@@ -292,10 +294,11 @@ function WidgetText({
 
 /** The brand palette editor; re-created (via key) when the saved palette changes. */
 function BrandColors({ initial, submit }: { initial: BrandPalette | null; submit: (data: Record<string, string>) => void }) {
+  const t = useT();
   const [palette, setPalette] = useState<BrandPalette | null>(initial);
   const fetcher = { submit: (data: Record<string, string>) => submit(data) };
   return (
-        <s-section heading="Brand colours">
+        <s-section heading={t("Brand colours")}>
           <s-stack gap="base">
             <s-paragraph>
               Read your theme&apos;s colours into a palette, adjust it, then apply it to your deals. Deals using brand colours update
@@ -329,15 +332,15 @@ function BrandColors({ initial, submit }: { initial: BrandPalette | null; submit
                 ))}
               </s-stack>
             ) : (
-              <s-paragraph color="subdued">No palette yet.</s-paragraph>
+              <s-paragraph color="subdued">{t("No palette yet.")}</s-paragraph>
             )}
             <s-button-group>
               <s-button onClick={() => fetcher.submit({ intent: "scan" })}>
-                {palette ? "Scan my theme again" : "Scan my theme"}
+                {palette ? t("Scan my theme again") : t("Scan my theme")}
               </s-button>
               {palette ? (
                 <s-button onClick={() => fetcher.submit({ intent: "palette", palette: JSON.stringify(palette) })}>
-                  Save palette
+                  {t("Save palette")}
                 </s-button>
               ) : null}
               {palette ? (
@@ -348,7 +351,7 @@ function BrandColors({ initial, submit }: { initial: BrandPalette | null; submit
                       fetcher.submit({ intent: "apply-brand" });
                   }}
                 >
-                  Apply to all deals
+                  {t("Apply to all deals")}
                 </s-button>
               ) : null}
             </s-button-group>

@@ -6,6 +6,7 @@ import prisma from "../db.server";
 import { duplicateDeal, getDeal, listDeals } from "../lib/deal.server";
 import { syncShop, isLive } from "../lib/sync.server";
 import { TEMPLATES, TEMPLATE_INFO, type DealTypeKey, type TemplateKey } from "../lib/deals";
+import { useT } from "../lib/admin-i18n";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
@@ -79,6 +80,7 @@ const STATUS_TONE: Record<string, "success" | "neutral" | "warning" | "info"> = 
 };
 
 export default function Deals() {
+  const t = useT();
   const { deals } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
   const fetcher = useFetcher<typeof action>();
@@ -89,30 +91,30 @@ export default function Deals() {
   };
 
   return (
-    <s-page heading="Deals">
+    <s-page heading={t("Deals")}>
       <s-button slot="primary-action" variant="primary" onClick={() => navigate("/app/deals/new?template=quantity_breaks")}>
-        Create deal
+        {t("Create deal")}
       </s-button>
 
       {fetcher.data && !fetcher.data.ok ? (
         <s-banner tone="critical">{fetcher.data.error}</s-banner>
       ) : null}
 
-      <s-section heading="Start from a template">
+      <s-section heading={t("Start from a template")}>
         <s-grid gridTemplateColumns="repeat(auto-fit, minmax(220px, 1fr))" gap="base">
           {(Object.keys(TEMPLATES) as TemplateKey[]).map((key) => (
             <s-box key={key} padding="base" border="base" borderRadius="base">
               <s-stack gap="small-200">
                 <s-stack direction="inline" gap="small-200" alignItems="center">
-                  <s-heading>{TEMPLATES[key].title}</s-heading>
-                  {TEMPLATES[key].available ? null : <s-badge>Coming soon</s-badge>}
+                  <s-heading>{t(TEMPLATES[key].title)}</s-heading>
+                  {TEMPLATES[key].available ? null : <s-badge>{t("Coming soon")}</s-badge>}
                 </s-stack>
-                <s-paragraph color="subdued">{TEMPLATES[key].description}</s-paragraph>
+                <s-paragraph color="subdued">{t(TEMPLATES[key].description)}</s-paragraph>
                 <s-button
                   disabled={!TEMPLATES[key].available || undefined}
                   onClick={() => navigate(`/app/deals/new?template=${key}`)}
                 >
-                  Use template
+                  {t("Use template")}
                 </s-button>
               </s-stack>
             </s-box>
@@ -120,20 +122,20 @@ export default function Deals() {
         </s-grid>
       </s-section>
 
-      <s-section heading="Your deals" padding="none">
+      <s-section heading={t("Your deals")} padding="none">
         {deals.length === 0 ? (
           <s-box padding="base">
-            <s-paragraph>No deals yet. Pick a template above to create your first one.</s-paragraph>
+            <s-paragraph>{t("No deals yet. Pick a template above to create your first one.")}</s-paragraph>
           </s-box>
         ) : (
           <s-table>
             <s-table-header-row>
-              <s-table-header listSlot="primary">Deal</s-table-header>
-              <s-table-header>Status</s-table-header>
-              <s-table-header>Applies to</s-table-header>
-              <s-table-header format="numeric">Views (30d)</s-table-header>
-              <s-table-header format="numeric">Orders (30d)</s-table-header>
-              <s-table-header>Actions</s-table-header>
+              <s-table-header listSlot="primary">{t("Deal")}</s-table-header>
+              <s-table-header>{t("Status")}</s-table-header>
+              <s-table-header>{t("Applies to")}</s-table-header>
+              <s-table-header format="numeric">{t("Views (30d)")}</s-table-header>
+              <s-table-header format="numeric">{t("Orders (30d)")}</s-table-header>
+              <s-table-header>{t("Actions")}</s-table-header>
             </s-table-header-row>
             <s-table-body>
               {deals.map((deal, index) => (
@@ -141,7 +143,7 @@ export default function Deals() {
                   <s-table-cell>
                     <s-stack gap="small-100">
                       <s-link href={`/app/deals/${deal.id}`}>{deal.name}</s-link>
-                      <s-text color="subdued">{TEMPLATE_INFO[deal.type]?.title}</s-text>
+                      <s-text color="subdued">{t(TEMPLATE_INFO[deal.type]?.title ?? "")}</s-text>
                     </s-stack>
                   </s-table-cell>
                   <s-table-cell>
@@ -164,12 +166,12 @@ export default function Deals() {
                   <s-table-cell>
                     <s-button-group>
                       <s-button onClick={() => run("toggle", deal.id)}>
-                        {deal.status === "ACTIVE" ? "Pause" : "Activate"}
+                        {deal.status === "ACTIVE" ? t("Pause") : t("Activate")}
                       </s-button>
-                      <s-button icon="arrow-up" accessibilityLabel="Move up" disabled={index === 0 || undefined} onClick={() => run("up", deal.id)} />
-                      <s-button icon="arrow-down" accessibilityLabel="Move down" disabled={index === deals.length - 1 || undefined} onClick={() => run("down", deal.id)} />
-                      <s-button icon="duplicate" accessibilityLabel="Duplicate" onClick={() => run("duplicate", deal.id)} />
-                      <s-button icon="delete" tone="critical" accessibilityLabel="Delete" onClick={() => run("delete", deal.id)} />
+                      <s-button icon="arrow-up" accessibilityLabel={t("Move up")} disabled={index === 0 || undefined} onClick={() => run("up", deal.id)} />
+                      <s-button icon="arrow-down" accessibilityLabel={t("Move down")} disabled={index === deals.length - 1 || undefined} onClick={() => run("down", deal.id)} />
+                      <s-button icon="duplicate" accessibilityLabel={t("Duplicate")} onClick={() => run("duplicate", deal.id)} />
+                      <s-button icon="delete" tone="critical" accessibilityLabel={t("Delete")} onClick={() => run("delete", deal.id)} />
                     </s-button-group>
                   </s-table-cell>
                 </s-table-row>
@@ -179,9 +181,9 @@ export default function Deals() {
         )}
       </s-section>
 
-      <s-section slot="aside" heading="How priority works">
+      <s-section slot="aside" heading={t("How priority works")}>
         <s-paragraph>
-          When several deals match the same product, the one higher in this list wins. Use the arrows to reorder.
+          {t("When several deals match the same product, the one higher in this list wins. Use the arrows to reorder.")}
         </s-paragraph>
       </s-section>
     </s-page>

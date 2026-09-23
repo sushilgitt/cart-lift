@@ -10,6 +10,7 @@ import { formatChange } from "../lib/metric-defs";
 import { monthlyUsage } from "../lib/billing.server";
 import { planById } from "../lib/plans";
 import { formatMoney } from "../lib/deals";
+import { useT } from "../lib/admin-i18n";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { admin, session } = await authenticate.admin(request);
@@ -48,6 +49,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 };
 
 export default function Dashboard() {
+  const t = useT();
   const d = useLoaderData<typeof loader>();
   const navigate = useNavigate();
   const money = (n: number) => formatMoney(Math.round(n * 100), d.moneyFormat);
@@ -56,9 +58,9 @@ export default function Dashboard() {
   const usagePct = Math.min(100, Math.round((d.usage / d.plan.limit) * 100));
 
   return (
-    <s-page heading="CartLift">
+    <s-page heading={t("CartLift")}>
       <s-button slot="primary-action" variant="primary" onClick={() => navigate("/app/deals/new?template=quantity_breaks")}>
-        Create deal
+        {t("Create deal")}
       </s-button>
 
       {done < steps.length ? (
@@ -74,7 +76,7 @@ export default function Dashboard() {
               }
               action={
                 <s-button href={d.embedUrl} target="_blank" variant={steps[0] ? "tertiary" : "primary"}>
-                  {steps[0] ? "Open theme editor" : "Turn on app embed"}
+                  {steps[0] ? t("Open theme editor") : t("Turn on app embed")}
                 </s-button>
               }
             />
@@ -82,31 +84,31 @@ export default function Dashboard() {
               done={steps[1]}
               title="Create your first deal"
               body="Start from a template: quantity breaks, buy X get Y, or mix & match."
-              action={<s-button onClick={() => navigate("/app/deals")}>Choose a template</s-button>}
+              action={<s-button onClick={() => navigate("/app/deals")}>{t("Choose a template")}</s-button>}
             />
             <SetupStep
               done={steps[2]}
               title="Activate a deal"
               body="Active deals show on matching product pages and are priced automatically at checkout."
-              action={<s-button onClick={() => navigate("/app/deals")}>Go to deals</s-button>}
+              action={<s-button onClick={() => navigate("/app/deals")}>{t("Go to deals")}</s-button>}
             />
           </s-stack>
         </s-section>
       ) : null}
 
-      <s-section heading="Last 30 days">
+      <s-section heading={t("Last 30 days")}>
         <s-grid gridTemplateColumns="repeat(auto-fit, minmax(160px, 1fr))" gap="base">
-          <Stat label="Deal revenue" value={money(d.total.revenue)} hint={`${d.changes.revenue} vs previous 30 days`} />
-          <Stat label="Added revenue" value={money(d.total.addedRevenue)} hint={`${d.changes.addedRevenue} · paid beyond a single unit`} />
-          <Stat label="Deal orders" value={String(d.total.orders)} hint={`${d.changes.orders} vs previous 30 days`} />
-          <Stat label="Visitors who saw a deal" value={String(d.total.views)} hint={`${d.changes.views} vs previous 30 days`} />
-          <Stat label="Conversion rate" value={`${(d.rates.conversion * 100).toFixed(1)}%`} hint={`${d.changes.conversion} vs previous 30 days`} />
-          <Stat label="Average order value" value={money(d.rates.aov)} hint={`${d.changes.aov} vs previous 30 days`} />
-          <Stat label="Units per order" value={d.rates.unitsPerOrder.toFixed(2)} />
+          <Stat label={t("Deal revenue")} value={money(d.total.revenue)} hint={`${d.changes.revenue} vs previous 30 days`} />
+          <Stat label={t("Added revenue")} value={money(d.total.addedRevenue)} hint={`${d.changes.addedRevenue} · paid beyond a single unit`} />
+          <Stat label={t("Deal orders")} value={String(d.total.orders)} hint={`${d.changes.orders} vs previous 30 days`} />
+          <Stat label={t("Visitors who saw a deal")} value={String(d.total.views)} hint={`${d.changes.views} vs previous 30 days`} />
+          <Stat label={t("Conversion rate")} value={`${(d.rates.conversion * 100).toFixed(1)}%`} hint={`${d.changes.conversion} vs previous 30 days`} />
+          <Stat label={t("Average order value")} value={money(d.rates.aov)} hint={`${d.changes.aov} vs previous 30 days`} />
+          <Stat label={t("Units per order")} value={d.rates.unitsPerOrder.toFixed(2)} />
         </s-grid>
       </s-section>
 
-      <s-section slot="aside" heading="Plan usage">
+      <s-section slot="aside" heading={t("Plan usage")}>
         <s-stack gap="small-200">
           <s-text>
             {d.plan.name} plan: {money(d.usage)} of {money(d.plan.limit)} added revenue this month
@@ -116,17 +118,17 @@ export default function Dashboard() {
           </div>
           {usagePct >= 80 ? (
             <s-paragraph>
-              {usagePct >= 100 ? "You've passed your plan's limit." : "You're close to your plan's limit."} Your deals keep running.{" "}
-              <s-link href="/app/plans">See plans</s-link>
+              {usagePct >= 100 ? t("You've passed your plan's limit.") : t("You're close to your plan's limit.")} Your deals keep running.{" "}
+              <s-link href="/app/plans">{t("See plans")}</s-link>
             </s-paragraph>
           ) : null}
         </s-stack>
       </s-section>
 
-      <s-section slot="aside" heading="Tips">
+      <s-section slot="aside" heading={t("Tips")}>
         <s-unordered-list>
-          <s-list-item>Mark your middle bar as “Most popular” — shoppers anchor on it.</s-list-item>
-          <s-list-item>Add a free gift to your top bar to lift average order value.</s-list-item>
+          <s-list-item>{t("Mark your middle bar as “Most popular” — shoppers anchor on it.")}</s-list-item>
+          <s-list-item>{t("Add a free gift to your top bar to lift average order value.")}</s-list-item>
           <s-list-item>Add ?cartlift=off to a product URL to see the page without CartLift.</s-list-item>
         </s-unordered-list>
       </s-section>

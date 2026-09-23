@@ -354,6 +354,35 @@ human review; lint rule against hard-coded strings in routes.
 
 **Exit:** PARITY 1.5 ✅ and subscription rows ✅.
 
+### 5.5 How it was actually built (2026-09-23)
+- **Translations** live in the deal's own config (`config.translations[locale]`)
+  and in shop settings (`settings.i18n[locale]`) rather than a new table — one
+  less migration, and a deal carries its texts when it is duplicated. Publishing
+  writes one `cartlift/i18n_<locale>` metafield per language; a language whose
+  texts are all removed is cleared on the next publish (`settings.locales`
+  remembers what was published). The widget swaps texts in `packages/widget/src/i18n.ts`
+  and falls back to the written text everywhere.
+- **Auto-translate** is `app/lib/translate.server.ts` (Claude API, effort "low",
+  `CARTLIFT_TRANSLATE_MODEL` to override). A translation that lost or renamed a
+  `{{variable}}` keeps its source text. Needs `ANTHROPIC_API_KEY` on the server.
+- **The admin's nine languages** are keyed by the English source text
+  (`app/lib/admin-i18n.tsx` + `app/locales/<lang>.json`), so a missing or
+  outdated translation shows English instead of a key, and texts that come from
+  `app/lib` (template titles, metric and plan names) translate through the same
+  dictionary. The language follows Shopify's `?locale=`.
+- **Subscriptions** turned out simpler than the plan: instead of a subscription
+  discount per bar, the *plan's price* is the price every bar is computed from,
+  which is what a shopper sees anyway. `subscriptions.apply` ("both" /
+  "subscription" / "onetime") is enforced in the Function and mirrored in the
+  cart watcher, so tiers can't be filled by purchases the deal doesn't price.
+  Gifts are always one-time. No `appliesOnSubscription` field exists on
+  `DiscountAutomaticAppInput`, and Function discounts already reach subscription
+  lines, so nothing extra is set on the discount — note that the Function is not
+  re-run for recurring orders.
+- **Still open:** upsells "for subscribers only" beyond what `apply` gives;
+  server-side validation messages are still English; untested against a live
+  subscription app.
+
 ---
 
 ## Phase 6 — Billing & ecosystem

@@ -63,6 +63,7 @@ import {
   TextField,
 } from "../components/fields";
 import { DealPreview } from "../components/DealPreview";
+import { useT } from "../lib/admin-i18n";
 
 // ---------------------------------------------------------------------------
 // Server
@@ -261,6 +262,7 @@ export default function DealRoute() {
 }
 
 function DealEditor({ data }: { data: LoaderData }) {
+  const t = useT();
   const { deal: initial, isNew, moneyFormat, currency } = data;
   const shopify = useAppBridge();
   const navigate = useNavigate();
@@ -485,7 +487,7 @@ function DealEditor({ data }: { data: LoaderData }) {
   };
 
   return (
-    <s-page heading={isNew ? `New deal: ${TEMPLATE_INFO[deal.type].title}` : deal.name}>
+    <s-page heading={isNew ? `${t("New deal")}: ${t(TEMPLATE_INFO[deal.type].title)}` : deal.name}>
       <SaveBar id="deal-save-bar" open={dirty}>
         <button variant="primary" onClick={save} disabled={saving}></button>
         <button onClick={isNew ? () => navigate("/app/deals") : discard} disabled={saving}></button>
@@ -853,6 +855,7 @@ function BarEditor({
   pickVariant: () => Promise<VariantRef | null>;
   pickVariants: (current: VariantRef[]) => Promise<VariantRef[] | null>;
 }) {
+  const t = useT();
   const bxgy = bar.kind === "bxgy";
   const bundle = bar.kind === "bundle";
   return (
@@ -862,16 +865,16 @@ function BarEditor({
           <s-stack direction="inline" gap="small-200" alignItems="center">
             <s-heading>Bar {index + 1}</s-heading>
             <s-badge tone={bxgy ? "info" : bundle ? "success" : "neutral"}>
-              {bxgy ? "Buy X get Y" : bundle ? "Complete the bundle" : "Quantity break"}
+              {bxgy ? "Buy X get Y" : bundle ? t("Complete the bundle") : t("Quantity break")}
             </s-badge>
-            {bar.selected ? <s-badge tone="success">Default</s-badge> : null}
+            {bar.selected ? <s-badge tone="success">{t("Default")}</s-badge> : null}
           </s-stack>
           <s-button-group>
-            <s-button icon="arrow-up" variant="tertiary" accessibilityLabel="Move up" disabled={index === 0 || undefined} onClick={() => onMove(-1)} />
+            <s-button icon="arrow-up" variant="tertiary" accessibilityLabel={t("Move up")} disabled={index === 0 || undefined} onClick={() => onMove(-1)} />
             <s-button
               icon="arrow-down"
               variant="tertiary"
-              accessibilityLabel="Move down"
+              accessibilityLabel={t("Move down")}
               disabled={index === count - 1 || undefined}
               onClick={() => onMove(1)}
             />
@@ -879,7 +882,7 @@ function BarEditor({
               icon="delete"
               variant="tertiary"
               tone="critical"
-              accessibilityLabel="Remove bar"
+              accessibilityLabel={t("Remove bar")}
               disabled={count <= 1 || undefined}
               onClick={onRemove}
             />
@@ -892,7 +895,7 @@ function BarEditor({
         <Grid columns={3}>
           {bundle ? null : allowBxgy || bxgy ? (
             <Select
-              label="Bar type"
+              label={t("Bar type")}
               value={bar.kind}
               onChange={(kind) =>
                 onChange(
@@ -902,21 +905,21 @@ function BarEditor({
                 )
               }
               options={[
-                { value: "qty", label: "Quantity break" },
-                { value: "bxgy", label: "Buy X get Y" },
+                { value: "qty", label: t("Quantity break") },
+                { value: "bxgy", label: t("Buy X get Y") },
               ]}
             />
           ) : null}
           {bundle ? null : bxgy ? (
             <>
               <NumberField
-                label="Buy"
+                label={t("Buy")}
                 min={1}
                 value={bar.qty - bar.get}
                 onChange={(buy) => onChange({ qty: Math.max(1, Math.floor(buy)) + bar.get })}
               />
               <NumberField
-                label="Get"
+                label={t("Get")}
                 min={1}
                 value={bar.get}
                 onChange={(get) => {
@@ -926,19 +929,19 @@ function BarEditor({
               />
             </>
           ) : (
-            <NumberField label="Quantity" min={1} value={bar.qty} onChange={(qty) => onChange({ qty: Math.max(1, Math.floor(qty)) })} />
+            <NumberField label={t("Quantity")} min={1} value={bar.qty} onChange={(qty) => onChange({ qty: Math.max(1, Math.floor(qty)) })} />
           )}
           {bundle ? null : (
           <Select
-            label={bxgy ? "Discount on the free items" : "Discount"}
+            label={bxgy ? t("Discount on the free items") : t("Discount")}
             value={bar.discountType}
             onChange={(dt) => onChange({ discountType: dt as DiscountType })}
             options={
               bxgy
                 ? [
-                    { value: "percentage", label: "Percentage off (100 = free)" },
-                    { value: "amount", label: "Amount off each" },
-                    { value: "fixed_total", label: "Fixed price each" },
+                    { value: "percentage", label: t("Percentage off (100 = free)") },
+                    { value: "amount", label: t("Amount off each") },
+                    { value: "fixed_total", label: t("Fixed price each") },
                   ]
                 : DISCOUNT_OPTIONS
             }
@@ -946,7 +949,7 @@ function BarEditor({
           )}
           {!bundle && bar.discountType !== "none" ? (
             <NumberField
-              label={bar.discountType === "percentage" ? "Percent" : "Amount"}
+              label={bar.discountType === "percentage" ? t("Percent") : t("Amount")}
               min={0}
               max={bar.discountType === "percentage" ? 100 : undefined}
               step={bar.discountType === "percentage" ? 1 : 0.01}
@@ -957,8 +960,8 @@ function BarEditor({
           ) : null}
           {bxgy ? (
             <NumberField
-              label="Extra discount on the rest"
-              details="On top of the free items, e.g. Buy 3 get 1 + 10%."
+              label={t("Extra discount on the rest")}
+              details={t("On top of the free items, e.g. Buy 3 get 1 + 10%.")}
               min={0}
               max={100}
               suffix="%"
@@ -969,17 +972,17 @@ function BarEditor({
         </Grid>
 
         <Grid>
-          <TextField label="Title" value={bar.title} onChange={(title) => onChange({ title })} />
-          <TextField label="Subtitle" value={bar.subtitle} onChange={(subtitle) => onChange({ subtitle })} />
-          <TextField label="Label" value={bar.label} onChange={(label) => onChange({ label })} placeholder="e.g. SAVE 20%" />
-          <TextField label="Badge" value={bar.badge} onChange={(badge) => onChange({ badge })} placeholder="e.g. Most popular" />
+          <TextField label={t("Title")} value={bar.title} onChange={(title) => onChange({ title })} />
+          <TextField label={t("Subtitle")} value={bar.subtitle} onChange={(subtitle) => onChange({ subtitle })} />
+          <TextField label={t("Label")} value={bar.label} onChange={(label) => onChange({ label })} placeholder={t("e.g. SAVE 20%")} />
+          <TextField label={t("Badge")} value={bar.badge} onChange={(badge) => onChange({ badge })} placeholder={t("e.g. Most popular")} />
         </Grid>
         <HighlightsEditor highlights={bar.highlights} onChange={(highlights) => onChange({ highlights })} />
         <BarImageEditor image={bar.image} onChange={(image) => onChange({ image })} />
         <s-stack gap="small-200">
-          <s-text type="strong">Default variants</s-text>
+          <s-text type="strong">{t("Default variants")}</s-text>
           <s-paragraph color="subdued">
-            Pre-selected in the variant pickers, one per item in order. Only variants of the product being viewed are used.
+            {t("Pre-selected in the variant pickers, one per item in order. Only variants of the product being viewed are used.")}
           </s-paragraph>
           {bar.defaultVariants.length ? (
             <s-stack direction="inline" gap="small-200">
@@ -995,20 +998,20 @@ function BarEditor({
                 if (picked) onChange({ defaultVariants: picked.slice(0, Math.max(1, bar.qty)) });
               }}
             >
-              {bar.defaultVariants.length ? "Change default variants" : "Set default variants"}
+              {bar.defaultVariants.length ? t("Change default variants") : t("Set default variants")}
             </s-button>
             {bar.defaultVariants.length ? (
               <s-button variant="tertiary" onClick={() => onChange({ defaultVariants: [] })}>
-                Clear
+                {t("Clear")}
               </s-button>
             ) : null}
           </s-button-group>
         </s-stack>
         <s-stack direction="inline" gap="base">
-          <Checkbox label="Selected by default" checked={bar.selected} onChange={(selected) => onChange({ selected })} />
+          <Checkbox label={t("Selected by default")} checked={bar.selected} onChange={(selected) => onChange({ selected })} />
           {bar.badge ? (
             <Checkbox
-              label="Fancy badge"
+              label={t("Fancy badge")}
               checked={bar.badgeStyle === "fancy"}
               onChange={(fancy) => onChange({ badgeStyle: fancy ? "fancy" : "simple" })}
             />
@@ -1017,7 +1020,7 @@ function BarEditor({
 
         {/* Free gifts */}
         <s-stack gap="small-200">
-          <s-text type="strong">Free gifts</s-text>
+          <s-text type="strong">{t("Free gifts")}</s-text>
           {bar.gifts.map((gift) => (
             <s-stack key={gift.id} direction="inline" gap="small-200" alignItems="center">
               <s-thumbnail src={gift.image ?? undefined} alt={gift.title} size="small" />
@@ -1030,7 +1033,7 @@ function BarEditor({
               />
             </s-stack>
           ))}
-          {bar.gifts.length ? <TextField label="Gift text" value={bar.giftText} onChange={(giftText) => onChange({ giftText })} /> : null}
+          {bar.gifts.length ? <TextField label={t("Gift text")} value={bar.giftText} onChange={(giftText) => onChange({ giftText })} /> : null}
           {bar.gifts.length < 5 ? (
             <div>
               <s-button
@@ -1040,7 +1043,7 @@ function BarEditor({
                   if (gift && !bar.gifts.some((g) => g.id === gift.id)) onChange({ gifts: [...bar.gifts, gift] });
                 }}
               >
-                Add free gift
+                {t("Add free gift")}
               </s-button>
             </div>
           ) : null}
@@ -1048,7 +1051,7 @@ function BarEditor({
 
         {/* Upsells */}
         <s-stack gap="small-200">
-          <s-text type="strong">Upsells on this bar</s-text>
+          <s-text type="strong">{t("Upsells on this bar")}</s-text>
           {bar.upsells.map((up) => (
             <UpsellEditor
               key={up.id}
@@ -1066,7 +1069,7 @@ function BarEditor({
                 if (variant) onChange({ upsells: [...bar.upsells, newUpsell({ variant })] });
               }}
             >
-              Add upsell
+              {t("Add upsell")}
             </s-button>
             <s-button
               icon="plus"
@@ -1079,7 +1082,7 @@ function BarEditor({
                 })
               }
             >
-              Add complementary products
+              {t("Add complementary products")}
             </s-button>
           </s-button-group>
         </s-stack>
@@ -1099,6 +1102,7 @@ function UpsellEditor({
   onRemove: () => void;
   pickVariant: () => Promise<VariantRef | null>;
 }) {
+  const t = useT();
   const complementary = upsell.source === "complementary";
   return (
     <s-box padding="small" border="base" borderRadius="base">
@@ -1106,7 +1110,7 @@ function UpsellEditor({
         <s-stack direction="inline" gap="small-200" alignItems="center" justifyContent="space-between">
           {complementary ? (
             <s-stack gap="small-100">
-              <s-text type="strong">Complementary products</s-text>
+              <s-text type="strong">{t("Complementary products")}</s-text>
               <s-text color="subdued">From the Search & Discovery app&apos;s complementary products for the viewed product.</s-text>
             </s-stack>
           ) : (
@@ -1124,42 +1128,42 @@ function UpsellEditor({
                   if (variant) onChange({ variant });
                 }}
               >
-                Change
+                {t("Change")}
               </s-button>
             )}
-            <s-button variant="tertiary" tone="critical" icon="delete" accessibilityLabel="Remove upsell" onClick={onRemove} />
+            <s-button variant="tertiary" tone="critical" icon="delete" accessibilityLabel={t("Remove upsell")} onClick={onRemove} />
           </s-button-group>
         </s-stack>
         {complementary ? (
           <NumberField
-            label="Products to offer"
+            label={t("Products to offer")}
             min={1}
             max={4}
             value={upsell.limit}
             onChange={(limit) => onChange({ limit: Math.min(4, Math.max(1, Math.floor(limit))) })}
           />
         ) : null}
-        <TextField label="Text" value={upsell.text} onChange={(text) => onChange({ text })} />
+        <TextField label={t("Text")} value={upsell.text} onChange={(text) => onChange({ text })} />
         <Grid>
           <Select
-            label="Discount"
+            label={t("Discount")}
             value={upsell.discountType}
             onChange={(dt) => onChange({ discountType: dt as DiscountType })}
             options={[
-              { value: "none", label: "No discount" },
-              { value: "percentage", label: "Percentage off" },
-              { value: "amount", label: "Amount off" },
-              { value: "fixed_total", label: "Fixed price" },
+              { value: "none", label: t("No discount") },
+              { value: "percentage", label: t("Percentage off") },
+              { value: "amount", label: t("Amount off") },
+              { value: "fixed_total", label: t("Fixed price") },
             ]}
           />
           {upsell.discountType !== "none" ? (
-            <NumberField label="Value" min={0} value={upsell.discountValue} onChange={(discountValue) => onChange({ discountValue })} />
+            <NumberField label={t("Value")} min={0} value={upsell.discountValue} onChange={(discountValue) => onChange({ discountValue })} />
           ) : null}
         </Grid>
         <s-stack direction="inline" gap="base">
-          <Checkbox label="Pre-checked" checked={upsell.checked} onChange={(checked) => onChange({ checked })} />
+          <Checkbox label={t("Pre-checked")} checked={upsell.checked} onChange={(checked) => onChange({ checked })} />
           <Checkbox
-            label="Only show when this bar is selected"
+            label={t("Only show when this bar is selected")}
             checked={upsell.onlyWhenSelected}
             onChange={(onlyWhenSelected) => onChange({ onlyWhenSelected })}
           />
@@ -1185,16 +1189,17 @@ async function fetchPreviewProduct(id: string): Promise<PreviewProduct | null> {
 }
 
 function HighlightsEditor({ highlights, onChange }: { highlights: string[]; onChange: (h: string[]) => void }) {
+  const t = useT();
   return (
     <s-stack gap="small-200">
-      <s-text type="strong">Highlights</s-text>
+      <s-text type="strong">{t("Highlights")}</s-text>
       {highlights.map((h, i) => (
         <s-stack key={i} direction="inline" gap="small-200" alignItems="end">
           <div style={{ flex: 1 }}>
             <TextField
               label={`Highlight ${i + 1}`}
               value={h}
-              placeholder="e.g. Free shipping"
+              placeholder={t("e.g. Free shipping")}
               onChange={(value) => onChange(highlights.map((x, j) => (j === i ? value : x)))}
             />
           </div>
@@ -1209,7 +1214,7 @@ function HighlightsEditor({ highlights, onChange }: { highlights: string[]; onCh
       {highlights.length < 4 ? (
         <div>
           <s-button icon="plus" variant="tertiary" onClick={() => onChange([...highlights, ""])}>
-            Add highlight
+            {t("Add highlight")}
           </s-button>
         </div>
       ) : null}
@@ -1218,6 +1223,7 @@ function HighlightsEditor({ highlights, onChange }: { highlights: string[]; onCh
 }
 
 function BarImageEditor({ image, onChange }: { image: Bar["image"]; onChange: (image: Bar["image"]) => void }) {
+  const t = useT();
   const input = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -1242,14 +1248,14 @@ function BarImageEditor({ image, onChange }: { image: Bar["image"]; onChange: (i
 
   return (
     <s-stack gap="small-200">
-      <s-text type="strong">Bar image</s-text>
+      <s-text type="strong">{t("Bar image")}</s-text>
       {image ? (
         <s-stack direction="inline" gap="small-200" alignItems="center">
           <s-thumbnail src={image.url} alt={image.alt} size="small" />
           <div style={{ flex: 1 }}>
-            <TextField label="Image description (alt text)" value={image.alt} onChange={(alt) => onChange({ ...image, alt })} />
+            <TextField label={t("Image description (alt text)")} value={image.alt} onChange={(alt) => onChange({ ...image, alt })} />
           </div>
-          <s-button variant="tertiary" icon="x" accessibilityLabel="Remove image" onClick={() => onChange(null)} />
+          <s-button variant="tertiary" icon="x" accessibilityLabel={t("Remove image")} onClick={() => onChange(null)} />
         </s-stack>
       ) : null}
       <input
@@ -1265,7 +1271,7 @@ function BarImageEditor({ image, onChange }: { image: Bar["image"]; onChange: (i
       />
       <div>
         <s-button icon="image" loading={busy || undefined} onClick={() => input.current?.click()}>
-          {image ? "Replace image" : "Upload image"}
+          {image ? t("Replace image") : t("Upload image")}
         </s-button>
       </div>
       {error ? <s-text tone="critical">{error}</s-text> : null}
@@ -1274,9 +1280,10 @@ function BarImageEditor({ image, onChange }: { image: Bar["image"]; onChange: (i
 }
 
 function MetafieldVarsEditor({ vars, onChange }: { vars: MetafieldVar[]; onChange: (vars: MetafieldVar[]) => void }) {
+  const t = useT();
   const set = (i: number, changes: Partial<MetafieldVar>) => onChange(vars.map((v, j) => (j === i ? { ...v, ...changes } : v)));
   return (
-    <s-section heading="Metafield variables">
+    <s-section heading={t("Metafield variables")}>
       <s-stack gap="base">
         <s-paragraph color="subdued">
           Show a product metafield in any text, e.g. {"{{material}}"} from custom.material. Up to 4.
@@ -1284,9 +1291,9 @@ function MetafieldVarsEditor({ vars, onChange }: { vars: MetafieldVar[]; onChang
         {vars.map((v, i) => (
           <s-stack key={i} direction="inline" gap="small-200" alignItems="end">
             <Grid columns={3}>
-              <TextField label="Variable" value={v.name} placeholder="material" onChange={(name) => set(i, { name: name.trim() })} />
-              <TextField label="Namespace" value={v.namespace} placeholder="custom" onChange={(namespace) => set(i, { namespace: namespace.trim() })} />
-              <TextField label="Key" value={v.key} placeholder="material" onChange={(key) => set(i, { key: key.trim() })} />
+              <TextField label={t("Variable")} value={v.name} placeholder="material" onChange={(name) => set(i, { name: name.trim() })} />
+              <TextField label={t("Namespace")} value={v.namespace} placeholder="custom" onChange={(namespace) => set(i, { namespace: namespace.trim() })} />
+              <TextField label={t("Key")} value={v.key} placeholder="material" onChange={(key) => set(i, { key: key.trim() })} />
             </Grid>
             <s-button variant="tertiary" icon="x" accessibilityLabel={`Remove variable ${i + 1}`} onClick={() => onChange(vars.filter((_, j) => j !== i))} />
           </s-stack>
@@ -1294,7 +1301,7 @@ function MetafieldVarsEditor({ vars, onChange }: { vars: MetafieldVar[]; onChang
         {vars.length < 4 ? (
           <div>
             <s-button icon="plus" onClick={() => onChange([...vars, { name: "", namespace: "custom", key: "" }])}>
-              Add metafield variable
+              {t("Add metafield variable")}
             </s-button>
           </div>
         ) : null}
@@ -1312,11 +1319,12 @@ function BundleItemsEditor({
   onChange: (items: BundleItem[]) => void;
   pickVariant: () => Promise<VariantRef | null>;
 }) {
+  const t = useT();
   const set = (id: string, changes: Partial<BundleItem>) => onChange(items.map((it) => (it.id === id ? { ...it, ...changes } : it)));
   return (
     <s-stack gap="small-200">
-      <s-text type="strong">Items in the bundle</s-text>
-      <s-paragraph color="subdued">The product being viewed plus the items you pick, each with its own discount. Checkout discounts complete sets only.</s-paragraph>
+      <s-text type="strong">{t("Items in the bundle")}</s-text>
+      <s-paragraph color="subdued">{t("The product being viewed plus the items you pick, each with its own discount. Checkout discounts complete sets only.")}</s-paragraph>
       {items.map((it) => (
         <s-box key={it.id} padding="small" border="base" borderRadius="base">
           <s-stack gap="small-200">
@@ -1327,7 +1335,7 @@ function BundleItemsEditor({
                   <s-text>{it.variant.title}</s-text>
                 </s-stack>
               ) : (
-                <s-text type="strong">{items.indexOf(it) === 0 ? "The product being viewed" : "Pick a product"}</s-text>
+                <s-text type="strong">{items.indexOf(it) === 0 ? t("The product being viewed") : t("Pick a product")}</s-text>
               )}
               <s-button-group>
                 {items.indexOf(it) === 0 ? null : (
@@ -1338,7 +1346,7 @@ function BundleItemsEditor({
                       if (variant) set(it.id, { variant });
                     }}
                   >
-                    {it.variant ? "Change" : "Pick product"}
+                    {it.variant ? t("Change") : t("Pick product")}
                   </s-button>
                 )}
                 {items.indexOf(it) === 0 ? null : (
@@ -1346,28 +1354,28 @@ function BundleItemsEditor({
                     variant="tertiary"
                     tone="critical"
                     icon="delete"
-                    accessibilityLabel="Remove item"
+                    accessibilityLabel={t("Remove item")}
                     onClick={() => onChange(items.filter((x) => x.id !== it.id))}
                   />
                 )}
               </s-button-group>
             </s-stack>
             <Grid columns={3}>
-              <NumberField label="Quantity" min={1} max={20} value={it.qty} onChange={(qty) => set(it.id, { qty: Math.max(1, Math.floor(qty)) })} />
+              <NumberField label={t("Quantity")} min={1} max={20} value={it.qty} onChange={(qty) => set(it.id, { qty: Math.max(1, Math.floor(qty)) })} />
               <Select
-                label="Discount"
+                label={t("Discount")}
                 value={it.discountType}
                 onChange={(dt) => set(it.id, { discountType: dt as DiscountType })}
                 options={[
-                  { value: "none", label: "No discount" },
-                  { value: "percentage", label: "Percentage off" },
-                  { value: "amount", label: "Amount off each" },
-                  { value: "fixed_total", label: "Fixed price each" },
+                  { value: "none", label: t("No discount") },
+                  { value: "percentage", label: t("Percentage off") },
+                  { value: "amount", label: t("Amount off each") },
+                  { value: "fixed_total", label: t("Fixed price each") },
                 ]}
               />
               {it.discountType !== "none" ? (
                 <NumberField
-                  label={it.discountType === "percentage" ? "Percent" : "Amount"}
+                  label={it.discountType === "percentage" ? t("Percent") : t("Amount")}
                   min={0}
                   max={it.discountType === "percentage" ? 100 : undefined}
                   value={it.discountValue}
@@ -1381,7 +1389,7 @@ function BundleItemsEditor({
       {items.length < 6 ? (
         <div>
           <s-button icon="plus" onClick={() => onChange([...items, newBundleItem({ discountType: "percentage", discountValue: 10 })])}>
-            Add item
+            {t("Add item")}
           </s-button>
         </div>
       ) : null}
@@ -1397,22 +1405,23 @@ function SubscriptionsEditor({
   subs: Subscriptions;
   onChange: (changes: Partial<Subscriptions>) => void;
 }) {
+  const t = useT();
   return (
-    <s-section heading="Subscriptions">
+    <s-section heading={t("Subscriptions")}>
       <s-stack gap="base">
         <Select
-          label="This deal applies to"
+          label={t("This deal applies to")}
           value={subs.apply}
           onChange={(apply) => onChange({ apply: apply as Subscriptions["apply"] })}
           options={[
-            { value: "both", label: "One-time and subscription purchases" },
-            { value: "subscription", label: "Subscription purchases only" },
-            { value: "onetime", label: "One-time purchases only" },
+            { value: "both", label: t("One-time and subscription purchases") },
+            { value: "subscription", label: t("Subscription purchases only") },
+            { value: "onetime", label: t("One-time purchases only") },
           ]}
         />
         <Checkbox
-          label="Show a one-time / subscribe picker"
-          details="For products with a selling plan. The picker prices the whole deal from the plan the shopper chooses."
+          label={t("Show a one-time / subscribe picker")}
+          details={t("For products with a selling plan. The picker prices the whole deal from the plan the shopper chooses.")}
           checked={subs.enabled}
           onChange={(enabled) => onChange({ enabled })}
         />
@@ -1420,27 +1429,27 @@ function SubscriptionsEditor({
           <>
             <Grid>
               <TextField
-                label="One-time text"
+                label={t("One-time text")}
                 value={subs.onetimeLabel}
                 onChange={(onetimeLabel) => onChange({ onetimeLabel })}
               />
               <TextField
-                label="Subscribe text"
+                label={t("Subscribe text")}
                 value={subs.subscribeLabel}
                 onChange={(subscribeLabel) => onChange({ subscribeLabel })}
               />
             </Grid>
             <Select
-              label="Selected when the page opens"
+              label={t("Selected when the page opens")}
               value={subs.preselect}
               onChange={(preselect) => onChange({ preselect: preselect as Subscriptions["preselect"] })}
               options={[
-                { value: "onetime", label: "One-time purchase" },
-                { value: "subscribe", label: "Subscribe" },
+                { value: "onetime", label: t("One-time purchase") },
+                { value: "subscribe", label: t("Subscribe") },
               ]}
             />
             <s-paragraph color="subdued">
-              Free gifts are always added as one-time items, never as a subscription.
+              {t("Free gifts are always added as one-time items, never as a subscription.")}
             </s-paragraph>
           </>
         ) : null}
@@ -1458,32 +1467,33 @@ function MixMatchEditor({
   onChange: (changes: Partial<MixMatch>) => void;
   pickRefs: (type: "product" | "collection", current: ResourceRef[]) => Promise<ResourceRef[] | null>;
 }) {
+  const t = useT();
   return (
-    <s-section heading="Mix & match">
+    <s-section heading={t("Mix & match")}>
       <s-stack gap="base">
         <Checkbox
-          label="Let shoppers fill a bar with different products"
-          details="Each unit after the first gets a “choose” button that opens a product picker."
+          label={t("Let shoppers fill a bar with different products")}
+          details={t("Each unit after the first gets a “choose” button that opens a product picker.")}
           checked={mm.enabled}
           onChange={(enabled) => onChange({ enabled })}
         />
         {mm.enabled ? (
           <>
             <Select
-              label="Products shoppers can choose"
+              label={t("Products shoppers can choose")}
               value={mm.pool}
               onChange={(pool) => onChange({ pool: pool as MixMatch["pool"] })}
               options={[
-                { value: "visibility", label: "Same products as the deal's visibility" },
-                { value: "products", label: "Selected products" },
-                { value: "collections", label: "Products in selected collections" },
-                { value: "except", label: "All products except selected" },
+                { value: "visibility", label: t("Same products as the deal's visibility") },
+                { value: "products", label: t("Selected products") },
+                { value: "collections", label: t("Products in selected collections") },
+                { value: "except", label: t("All products except selected") },
               ]}
             />
             {mm.pool === "products" || mm.pool === "except" ? (
               <ResourceList
                 items={mm.products}
-                label="products"
+                label={t("products")}
                 onPick={async () => {
                   const products = await pickRefs("product", mm.products);
                   if (products) onChange({ products });
@@ -1494,7 +1504,7 @@ function MixMatchEditor({
             {mm.pool === "collections" ? (
               <ResourceList
                 items={mm.collections}
-                label="collections"
+                label={t("collections")}
                 onPick={async () => {
                   const collections = await pickRefs("collection", mm.collections);
                   if (collections) onChange({ collections });
@@ -1503,11 +1513,11 @@ function MixMatchEditor({
               />
             ) : null}
             <Grid>
-              <TextField label="Picker title" value={mm.modalTitle} onChange={(modalTitle) => onChange({ modalTitle })} />
-              <TextField label="Button text" value={mm.buttonText} onChange={(buttonText) => onChange({ buttonText })} />
-              <NumberField label="Product photo size" min={32} max={160} suffix="px" value={mm.photoSize} onChange={(photoSize) => onChange({ photoSize })} />
+              <TextField label={t("Picker title")} value={mm.modalTitle} onChange={(modalTitle) => onChange({ modalTitle })} />
+              <TextField label={t("Button text")} value={mm.buttonText} onChange={(buttonText) => onChange({ buttonText })} />
+              <NumberField label={t("Product photo size")} min={32} max={160} suffix="px" value={mm.photoSize} onChange={(photoSize) => onChange({ photoSize })} />
             </Grid>
-            <Checkbox label="Show product names" checked={mm.showNames} onChange={(showNames) => onChange({ showNames })} />
+            <Checkbox label={t("Show product names")} checked={mm.showNames} onChange={(showNames) => onChange({ showNames })} />
           </>
         ) : null}
       </s-stack>
@@ -1535,6 +1545,7 @@ function AbTestPanel({
   onChange: (test: DealConfig["abTest"]) => void;
   onApply: (key: ArmKey) => void;
 }) {
+  const t = useT();
   const keys: ArmKey[] = ["A", ...(Object.keys(test.arms) as ArmKey[])];
   const next = ARM_KEYS.find((k) => !keys.includes(k));
   const even = (list: ArmKey[]) => {
@@ -1546,11 +1557,11 @@ function AbTestPanel({
   const pct = (n: number) => `${(n * 100).toFixed(2)}%`;
 
   return (
-    <s-section heading="A/B test">
+    <s-section heading={t("A/B test")}>
       <s-stack gap="base">
         <s-stack direction="inline" gap="small-200" alignItems="center">
           <s-badge tone={running ? "success" : test.status === "ended" ? "info" : "neutral"}>
-            {running ? "Running" : test.status === "ended" ? "Ended" : "Not running"}
+            {running ? "Running" : test.status === "ended" ? t("Ended") : t("Not running")}
           </s-badge>
           <s-text color="subdued">
             Test up to four variants of this deal — bars, prices, style, text. Visitors keep their variant. A winner needs at least{" "}
@@ -1570,7 +1581,7 @@ function AbTestPanel({
 
         {keys.length > 1 ? (
           <s-stack gap="small-200">
-            <s-text type="strong">Traffic split</s-text>
+            <s-text type="strong">{t("Traffic split")}</s-text>
             <Grid columns={4}>
               {keys.map((k) => (
                 <NumberField
@@ -1603,19 +1614,19 @@ function AbTestPanel({
             </s-button>
           ) : null}
           {keys.length > 1 && !running ? (
-            <s-button onClick={() => onChange({ ...test, weights: even(keys) })}>Split evenly</s-button>
+            <s-button onClick={() => onChange({ ...test, weights: even(keys) })}>{t("Split evenly")}</s-button>
           ) : null}
           {keys.length > 1 && !running ? (
             <s-button
               variant="primary"
               onClick={() => onChange({ ...test, status: "running", startedAt: new Date().toISOString(), endedAt: null })}
             >
-              Start test
+              {t("Start test")}
             </s-button>
           ) : null}
           {running ? (
             <s-button tone="critical" onClick={() => onChange({ ...test, status: "ended", endedAt: new Date().toISOString() })}>
-              End test
+              {t("End test")}
             </s-button>
           ) : null}
           {editing !== "A" && !running ? (
@@ -1634,7 +1645,7 @@ function AbTestPanel({
             </s-button>
           ) : null}
         </s-button-group>
-        <s-text color="subdued">Changes to the test take effect when you save.</s-text>
+        <s-text color="subdued">{t("Changes to the test take effect when you save.")}</s-text>
 
         {results ? (
           <s-stack gap="small-200">
@@ -1647,13 +1658,13 @@ function AbTestPanel({
             </s-text>
             <s-table>
               <s-table-header-row>
-                <s-table-header listSlot="primary">Variant</s-table-header>
-                <s-table-header format="numeric">Visitors</s-table-header>
-                <s-table-header format="numeric">Orders</s-table-header>
-                <s-table-header format="numeric">Conversion</s-table-header>
-                <s-table-header format="numeric">Lift vs A</s-table-header>
-                <s-table-header format="numeric">p-value</s-table-header>
-                <s-table-header>Action</s-table-header>
+                <s-table-header listSlot="primary">{t("Variant")}</s-table-header>
+                <s-table-header format="numeric">{t("Visitors")}</s-table-header>
+                <s-table-header format="numeric">{t("Orders")}</s-table-header>
+                <s-table-header format="numeric">{t("Conversion")}</s-table-header>
+                <s-table-header format="numeric">{t("Lift vs A")}</s-table-header>
+                <s-table-header format="numeric">{t("p-value")}</s-table-header>
+                <s-table-header>{t("Action")}</s-table-header>
               </s-table-header-row>
               <s-table-body>
                 {results.arms.map((r) => (
@@ -1675,7 +1686,7 @@ function AbTestPanel({
                             if (confirm(`Make variant ${r.key} the deal and end the test?`)) onApply(r.key as ArmKey);
                           }}
                         >
-                          {results.winner === r.key ? "Apply winner" : "Apply"}
+                          {results.winner === r.key ? t("Apply winner") : t("Apply")}
                         </s-button>
                       ) : null}
                     </s-table-cell>
@@ -1706,6 +1717,7 @@ function TranslationsEditor({
   onChange: (translations: Record<string, DealTranslation>) => void;
   onTranslate: (locale: string, language: string) => void;
 }) {
+  const t = useT();
   const others = locales.filter((l) => !l.primary);
   const [locale, setLocale] = useState(others[0]?.locale ?? "");
   const language = others.find((l) => l.locale === locale);
@@ -1716,7 +1728,7 @@ function TranslationsEditor({
     onChange({ ...translations, [locale]: translationFromTexts({ ...flat, [key]: value }) });
 
   return (
-    <s-section heading="Translations">
+    <s-section heading={t("Translations")}>
       <s-stack gap="base">
         <s-paragraph color="subdued">
           Your storefront shows these texts in the shopper&apos;s language. Anything you leave empty stays in{" "}
@@ -1724,7 +1736,7 @@ function TranslationsEditor({
         </s-paragraph>
         <s-stack direction="inline" gap="base" alignItems="end">
           <Select
-            label="Language"
+            label={t("Language")}
             value={locale}
             onChange={setLocale}
             options={others.map((l) => ({ value: l.locale, label: `${l.name} (${l.locale})` }))}
@@ -1733,7 +1745,7 @@ function TranslationsEditor({
             loading={busy === locale || undefined}
             onClick={() => language && onTranslate(locale, `${language.name} (${language.locale})`)}
           >
-            Translate automatically
+            {t("Translate automatically")}
           </s-button>
         </s-stack>
         <s-stack gap="small-200">
@@ -1825,6 +1837,7 @@ function ColorSlot({
   onChange: (v: string) => void;
   emptyLabel?: string;
 }) {
+  const t = useT();
   if (value.startsWith("brand:")) {
     const hex = resolveColor(value, palette);
     return (
@@ -1834,7 +1847,7 @@ function ColorSlot({
           <span aria-hidden="true" style={{ width: 20, height: 20, borderRadius: 4, border: "1px solid #ccc", background: hex || "transparent" }} />
           <s-badge tone="info">{slotLabel(value)}</s-badge>
           <s-button variant="tertiary" onClick={() => onChange(hex || "#000000")}>
-            Unlink
+            {t("Unlink")}
           </s-button>
         </s-stack>
       </s-stack>
@@ -1847,7 +1860,7 @@ function ColorSlot({
         <s-stack direction="inline" gap="small-200" alignItems="center">
           <s-text color="subdued">{emptyLabel}</s-text>
           <s-button variant="tertiary" onClick={() => onChange("#ffffff")}>
-            Set colour
+            {t("Set colour")}
           </s-button>
         </s-stack>
       </s-stack>
@@ -1864,7 +1877,7 @@ function ColorSlot({
             onChange={(e) => e.currentTarget.value && onChange(e.currentTarget.value)}
             style={{ fontSize: 12 }}
           >
-            <option value="">Use a brand colour…</option>
+            <option value="">{t("Use a brand colour…")}</option>
             {BRAND_GROUPS.flatMap((g) =>
               palette[g].map((hex, i) => (
                 <option key={`${g}.${i}`} value={`brand:${g}.${i}`}>
@@ -1876,7 +1889,7 @@ function ColorSlot({
         ) : null}
         {emptyLabel ? (
           <s-button variant="tertiary" onClick={() => onChange("")}>
-            Reset
+            {t("Reset")}
           </s-button>
         ) : null}
       </s-stack>
@@ -1893,13 +1906,14 @@ function StyleEditor({
   palette: BrandPalette | null;
   onChange: (changes: Partial<DealStyle>) => void;
 }) {
+  const t = useT();
   const sb = style.savingsBar;
   const setSb = (changes: Partial<DealStyle["savingsBar"]>) => onChange({ savingsBar: { ...sb, ...changes } });
   return (
-    <s-section heading="Style">
+    <s-section heading={t("Style")}>
       <s-stack gap="base">
         <s-stack gap="small-200">
-          <s-text type="strong">Theme</s-text>
+          <s-text type="strong">{t("Theme")}</s-text>
           <s-stack direction="inline" gap="small-200">
             {Object.entries(PRESET_THEMES).map(([key, preset]) => (
               <s-button key={key} onClick={() => onChange({ colors: { ...style.colors, ...preset.colors } })}>
@@ -1908,96 +1922,96 @@ function StyleEditor({
             ))}
             {palette ? (
               <s-button variant="primary" onClick={() => onChange({ colors: { ...style.colors, ...BRAND_LINKS } })}>
-                Use brand colours
+                {t("Use brand colours")}
               </s-button>
             ) : (
-              <s-link href="/app/settings">Set up brand colours</s-link>
+              <s-link href="/app/settings">{t("Set up brand colours")}</s-link>
             )}
           </s-stack>
         </s-stack>
 
         <Grid columns={3}>
           <Select
-            label="Layout"
+            label={t("Layout")}
             value={style.layout}
             onChange={(layout) => onChange({ layout: layout as DealStyle["layout"] })}
             options={[
-              { value: "vertical", label: "Vertical list" },
-              { value: "horizontal", label: "Horizontal" },
-              { value: "grid", label: "Grid (2 columns)" },
-              { value: "plain", label: "Plain (no cards)" },
+              { value: "vertical", label: t("Vertical list") },
+              { value: "horizontal", label: t("Horizontal") },
+              { value: "grid", label: t("Grid (2 columns)") },
+              { value: "plain", label: t("Plain (no cards)") },
             ]}
           />
-          <NumberField label="Corner radius" min={0} max={30} suffix="px" value={style.radius} onChange={(radius) => onChange({ radius })} />
-          <NumberField label="Border width" min={0} max={6} suffix="px" value={style.borderWidth} onChange={(borderWidth) => onChange({ borderWidth })} />
-          <NumberField label="Space between bars" min={0} max={32} suffix="px" value={style.barGap} onChange={(barGap) => onChange({ barGap })} />
-          <NumberField label="Bar padding" min={4} max={32} suffix="px" value={style.barPadding} onChange={(barPadding) => onChange({ barPadding })} />
-          <NumberField label="Bar image size" min={24} max={160} suffix="px" value={style.imageSize} onChange={(imageSize) => onChange({ imageSize })} />
+          <NumberField label={t("Corner radius")} min={0} max={30} suffix="px" value={style.radius} onChange={(radius) => onChange({ radius })} />
+          <NumberField label={t("Border width")} min={0} max={6} suffix="px" value={style.borderWidth} onChange={(borderWidth) => onChange({ borderWidth })} />
+          <NumberField label={t("Space between bars")} min={0} max={32} suffix="px" value={style.barGap} onChange={(barGap) => onChange({ barGap })} />
+          <NumberField label={t("Bar padding")} min={4} max={32} suffix="px" value={style.barPadding} onChange={(barPadding) => onChange({ barPadding })} />
+          <NumberField label={t("Bar image size")} min={24} max={160} suffix="px" value={style.imageSize} onChange={(imageSize) => onChange({ imageSize })} />
         </Grid>
 
-        <s-heading>Text</s-heading>
+        <s-heading>{t("Text")}</s-heading>
         <Grid columns={3}>
-          <NumberField label="Title size" min={11} max={24} suffix="px" value={style.titleSize} onChange={(titleSize) => onChange({ titleSize })} />
-          <Select label="Title weight" value={String(style.titleWeight)} onChange={(v) => onChange({ titleWeight: Number(v) })} options={WEIGHTS} />
-          <NumberField label="Subtitle size" min={9} max={24} suffix="px" value={style.subtitleSize} onChange={(subtitleSize) => onChange({ subtitleSize })} />
-          <NumberField label="Price size" min={10} max={32} suffix="px" value={style.priceSize} onChange={(priceSize) => onChange({ priceSize })} />
-          <NumberField label="Block title size" min={9} max={28} suffix="px" value={style.blockTitleSize} onChange={(blockTitleSize) => onChange({ blockTitleSize })} />
-          <Select label="Block title weight" value={String(style.blockTitleWeight)} onChange={(v) => onChange({ blockTitleWeight: Number(v) })} options={WEIGHTS} />
+          <NumberField label={t("Title size")} min={11} max={24} suffix="px" value={style.titleSize} onChange={(titleSize) => onChange({ titleSize })} />
+          <Select label={t("Title weight")} value={String(style.titleWeight)} onChange={(v) => onChange({ titleWeight: Number(v) })} options={WEIGHTS} />
+          <NumberField label={t("Subtitle size")} min={9} max={24} suffix="px" value={style.subtitleSize} onChange={(subtitleSize) => onChange({ subtitleSize })} />
+          <NumberField label={t("Price size")} min={10} max={32} suffix="px" value={style.priceSize} onChange={(priceSize) => onChange({ priceSize })} />
+          <NumberField label={t("Block title size")} min={9} max={28} suffix="px" value={style.blockTitleSize} onChange={(blockTitleSize) => onChange({ blockTitleSize })} />
+          <Select label={t("Block title weight")} value={String(style.blockTitleWeight)} onChange={(v) => onChange({ blockTitleWeight: Number(v) })} options={WEIGHTS} />
         </Grid>
         <Grid>
-          <TextField label="Block title" value={style.blockTitle} onChange={(blockTitle) => onChange({ blockTitle })} />
+          <TextField label={t("Block title")} value={style.blockTitle} onChange={(blockTitle) => onChange({ blockTitle })} />
           <s-stack gap="small-200">
-            <Checkbox label="Show block title" checked={style.showBlockTitle} onChange={(showBlockTitle) => onChange({ showBlockTitle })} />
-            <Checkbox label="Show price per item" checked={style.showUnitPrice} onChange={(showUnitPrice) => onChange({ showUnitPrice })} />
+            <Checkbox label={t("Show block title")} checked={style.showBlockTitle} onChange={(showBlockTitle) => onChange({ showBlockTitle })} />
+            <Checkbox label={t("Show price per item")} checked={style.showUnitPrice} onChange={(showUnitPrice) => onChange({ showUnitPrice })} />
             <Checkbox
-              label="Use product compare-at price as the full price"
+              label={t("Use product compare-at price as the full price")}
               checked={style.useCompareAt}
               onChange={(useCompareAt) => onChange({ useCompareAt })}
             />
             <Checkbox
-              label="Show the gift track"
-              details="Every gift tier above the bars, unlocked as bigger bars are chosen."
+              label={t("Show the gift track")}
+              details={t("Every gift tier above the bars, unlocked as bigger bars are chosen.")}
               checked={style.giftTrack}
               onChange={(giftTrack) => onChange({ giftTrack })}
             />
           </s-stack>
         </Grid>
 
-        <s-heading>Variant pickers</s-heading>
+        <s-heading>{t("Variant pickers")}</s-heading>
         <Grid columns={3}>
           <Select
-            label="Show variants as"
+            label={t("Show variants as")}
             value={style.variants.display}
             onChange={(display) => onChange({ variants: { ...style.variants, display: display as DealStyle["variants"]["display"] } })}
             options={[
-              { value: "dropdown", label: "Dropdowns" },
-              { value: "swatch", label: "Swatches" },
+              { value: "dropdown", label: t("Dropdowns") },
+              { value: "swatch", label: t("Swatches") },
             ]}
           />
           {style.variants.display === "swatch" ? (
             <>
               <Select
-                label="Swatch"
+                label={t("Swatch")}
                 value={style.variants.source}
                 onChange={(source) => onChange({ variants: { ...style.variants, source: source as DealStyle["variants"]["source"] } })}
                 options={[
-                  { value: "color", label: "Colour (from the product's option swatches)" },
-                  { value: "image", label: "Uploaded swatch image" },
-                  { value: "variant_image", label: "Variant image" },
+                  { value: "color", label: t("Colour (from the product's option swatches)") },
+                  { value: "image", label: t("Uploaded swatch image") },
+                  { value: "variant_image", label: t("Variant image") },
                 ]}
               />
               <Select
-                label="Shape"
+                label={t("Shape")}
                 value={style.variants.shape}
                 onChange={(shape) => onChange({ variants: { ...style.variants, shape: shape as DealStyle["variants"]["shape"] } })}
                 options={[
-                  { value: "circle", label: "Circle" },
-                  { value: "rounded", label: "Rounded" },
-                  { value: "square", label: "Square" },
+                  { value: "circle", label: t("Circle") },
+                  { value: "rounded", label: t("Rounded") },
+                  { value: "square", label: t("Square") },
                 ]}
               />
               <NumberField
-                label="Swatch size"
+                label={t("Swatch size")}
                 min={16}
                 max={64}
                 suffix="px"
@@ -2008,7 +2022,7 @@ function StyleEditor({
           ) : null}
         </Grid>
 
-        <s-heading>Colours</s-heading>
+        <s-heading>{t("Colours")}</s-heading>
         <Grid columns={3}>
           {COLOR_FIELDS.map(([key, label]) => (
             <ColorSlot
@@ -2031,56 +2045,56 @@ function StyleEditor({
           ))}
         </Grid>
 
-        <s-heading>Savings summary</s-heading>
+        <s-heading>{t("Savings summary")}</s-heading>
         <Checkbox
-          label="Show a savings summary under the bars"
-          details="“You're saving $X on this order” — updates as shoppers change their choice; hidden when there's no saving."
+          label={t("Show a savings summary under the bars")}
+          details={t("“You're saving $X on this order” — updates as shoppers change their choice; hidden when there's no saving.")}
           checked={sb.enabled}
           onChange={(enabled) => setSb({ enabled })}
         />
         {sb.enabled ? (
           <>
             <TextField
-              label="Text"
+              label={t("Text")}
               value={sb.text}
               details="Use {{saved_amount}} and {{saved_percentage}}."
               onChange={(text) => setSb({ text })}
             />
             <Grid columns={3}>
-              <ColorSlot label="Background" value={sb.background} palette={palette} onChange={(background) => setSb({ background })} />
-              <ColorSlot label="Text colour" value={sb.textColor} palette={palette} onChange={(textColor) => setSb({ textColor })} />
-              <ColorSlot label="Savings colour" value={sb.valueColor} palette={palette} onChange={(valueColor) => setSb({ valueColor })} />
+              <ColorSlot label={t("Background")} value={sb.background} palette={palette} onChange={(background) => setSb({ background })} />
+              <ColorSlot label={t("Text colour")} value={sb.textColor} palette={palette} onChange={(textColor) => setSb({ textColor })} />
+              <ColorSlot label={t("Savings colour")} value={sb.valueColor} palette={palette} onChange={(valueColor) => setSb({ valueColor })} />
               <Select
-                label="Alignment"
+                label={t("Alignment")}
                 value={sb.align}
                 onChange={(align) => setSb({ align: align as DealStyle["savingsBar"]["align"] })}
                 options={[
-                  { value: "left", label: "Left" },
-                  { value: "center", label: "Centre" },
-                  { value: "right", label: "Right" },
+                  { value: "left", label: t("Left") },
+                  { value: "center", label: t("Centre") },
+                  { value: "right", label: t("Right") },
                 ]}
               />
-              <NumberField label="Text size" min={10} max={24} suffix="px" value={sb.size} onChange={(size) => setSb({ size })} />
+              <NumberField label={t("Text size")} min={10} max={24} suffix="px" value={sb.size} onChange={(size) => setSb({ size })} />
             </Grid>
             <s-stack direction="inline" gap="base">
-              <Checkbox label="Count free gifts as savings" checked={sb.includeGifts} onChange={(includeGifts) => setSb({ includeGifts })} />
-              <Checkbox label="Border" checked={sb.border} onChange={(border) => setSb({ border })} />
-              <Checkbox label="Icon" checked={sb.icon} onChange={(icon) => setSb({ icon })} />
+              <Checkbox label={t("Count free gifts as savings")} checked={sb.includeGifts} onChange={(includeGifts) => setSb({ includeGifts })} />
+              <Checkbox label={t("Border")} checked={sb.border} onChange={(border) => setSb({ border })} />
+              <Checkbox label={t("Icon")} checked={sb.icon} onChange={(icon) => setSb({ icon })} />
             </s-stack>
           </>
         ) : null}
 
-        <s-heading>Custom code</s-heading>
+        <s-heading>{t("Custom code")}</s-heading>
         <TextArea
-          label="HTML above the bars"
+          label={t("HTML above the bars")}
           value={style.htmlAbove}
           rows={3}
-          details="Shown as written on your store. The preview leaves out scripts."
+          details={t("Shown as written on your store. The preview leaves out scripts.")}
           onChange={(htmlAbove) => onChange({ htmlAbove })}
         />
-        <TextArea label="HTML below the bars" value={style.htmlBelow} rows={3} onChange={(htmlBelow) => onChange({ htmlBelow })} />
+        <TextArea label={t("HTML below the bars")} value={style.htmlBelow} rows={3} onChange={(htmlBelow) => onChange({ htmlBelow })} />
         <TextArea
-          label="CSS for this deal"
+          label={t("CSS for this deal")}
           value={style.customCss}
           rows={5}
           details="Applies to this deal only, e.g. .cl-bar-title { letter-spacing: 0.04em; }"

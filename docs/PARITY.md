@@ -29,7 +29,7 @@ Legend: ✅ done · 🟡 partial · ❌ missing
 | Quantity breaks for different products (choose-product modal with its own style) | ✅ | Pool: visibility / products / collections / all-except; chooser with search |
 | Complete the bundle — "Bundle Upsell" bar: hand-picked products/variants, each with own discount | ✅ | Complete sets only |
 | Progressive gifts template *(template name unverified)* | ✅ | Several gifts per bar, cumulative option, gift track |
-| Subscription template / per-deal subscription toggle | ❌ | Selling plans not supported |
+| Subscription template / per-deal subscription toggle | ✅ | "Subscribe & save" template; per-deal "applies to" (both / subscriptions / one-time) |
 | Collection breaks — tiers apply however the product is added (widget, product form, collection page) | ✅ | Function counts untagged lines; gifts follow the cart (c9bb318) |
 | Collection breaks — merge duplicate variant lines into one | ✅ | Cart watcher merges a plain line into the deal line |
 | Same quantity allowed on two bars only with the same discount | ✅ | Picked bar is tagged; its gift/message apply |
@@ -45,8 +45,8 @@ Legend: ✅ done · 🟡 partial · ❌ missing
 | Free gift per bar | ✅ |
 | Upsell per bar — selected product, adjusted price, text, image, pre-checked, only when bar selected | ✅ |
 | Upsell source: Shopify complementary products | ✅ Search & Discovery; Function-checked |
-| Upsell "enable for subscription customers" | ❌ |
-| Subscription pricing option per bar | ❌ |
+| Upsell "enable for subscription customers" | 🟡 the deal chooses the purchase type; upsells follow it |
+| Subscription pricing option per bar | ✅ every bar is priced from the plan the shopper picks |
 | Discount name shown in cart/checkout (override) | ✅ |
 | Dynamic variables incl. 4 custom product-metafield variables | ✅ 11 built-ins + 4 metafield variables |
 
@@ -79,10 +79,10 @@ Legend: ✅ done · 🟡 partial · ❌ missing
 ### 1.5 Text, languages, markets
 | Kaching | CartLift |
 |---|---|
-| Storefront translations per store language, manual + Auto-translate | ❌ |
-| Markets dropdown per deal | ❌ |
+| Storefront translations per store language, manual + Auto-translate | ✅ per-language metafields; auto-translate via the Claude API |
+| Markets dropdown per deal | ✅ |
 | Money formats from Shopify, multi-currency | ✅ |
-| Admin in EN, FR, DE, ES, IT, NL, SV, TR, PT-BR | ❌ English only |
+| Admin in EN, FR, DE, ES, IT, NL, SV, TR, PT-BR | ✅ follows Shopify's `locale` |
 
 ### 1.6 Discount mechanics
 | Kaching | CartLift |
@@ -91,7 +91,7 @@ Legend: ✅ done · 🟡 partial · ❌ missing
 | Combines with order + shipping, not product discounts on same line | ✅ |
 | Buy-now hidden for multi-line bundles | ✅ |
 | Shopify POS | 🟡 untested |
-| Subscriptions / selling plans (Loop, Kaching Subscriptions compatible) | ❌ |
+| Subscriptions / selling plans (Loop, Kaching Subscriptions compatible) | ✅ any app's selling plans (untested against a live subscription app) |
 
 ### 1.7 Targeting & scheduling
 | Kaching | CartLift |
@@ -121,7 +121,7 @@ Legend: ✅ done · 🟡 partial · ❌ missing
 | Units per transaction | ✅ |
 | Checkout rate | ✅ |
 | Profit/visitor, profitability (needs product cost) | ✅ unit cost via read_inventory |
-| Subscribed count / subscription rate | ✅ tracked (subscriptions ship in Phase 5) |
+| Subscribed count / subscription rate | ✅ |
 | Chart over time with comparison period + % change | ✅ |
 | Custom date range | ✅ |
 | Tables: Bundles (custom KPI columns), Bars, Features, Products | ✅ |
@@ -190,7 +190,7 @@ Closes 1.1 (except subscriptions).
 - **Complete the bundle:** new "Bundle upsell" bar type with hand-picked
   products/variants and a discount each; Function prices each component.
 - **Progressive gifts:** template + gift progress track in the widget.
-- Template gallery with all six templates (Subscription greyed until Phase 5).
+- Template gallery with all six templates (Subscription greyed until Phase 5 — live since).
 
 ### Phase 3 — Analytics 2.0 + A/B testing (≈3–4 weeks) → ~80%  ✅ built 2026-09-22
 Closes 1.9.
@@ -214,7 +214,7 @@ Closes 1.4.
 - Custom HTML slot; per-deal custom CSS; drag-and-drop bar ordering.
 - Optional (unverified in Kaching docs): sticky add-to-cart.
 
-### Phase 5 — International & subscriptions (≈3–4 weeks) → ~93%
+### Phase 5 — International & subscriptions (≈3–4 weeks) → ~93%  ✅ built 2026-09-23
 Closes 1.5, and the subscription rows of 1.1, 1.2 and 1.6.
 - Storefront translations for every published store language
   (`request.locale`), manual editor + Auto-translate (LLM-backed).
@@ -225,6 +225,17 @@ Closes 1.5, and the subscription rows of 1.1, 1.2 and 1.6.
   the product's selling plans, subscription pricing per bar, upsells for
   subscribers, gifts one-time vs recurring; test with Shopify Subscriptions and Loop.
 - Subscribed count / rate metrics.
+
+**Built:** markets per deal (`read_markets`, country list from each market's
+regions); storefront translations as one `cartlift/i18n_<locale>` metafield per
+language with an editor and auto-translate (Claude API, `ANTHROPIC_API_KEY` on
+the server); the admin in all nine languages, keyed by the English source text
+and following Shopify's `locale`; subscriptions — "applies to" per deal
+(enforced in the Function *and* the cart watcher), a one-time / subscribe picker
+that prices every bar from the chosen plan, the plan carried on the lines the
+widget adds, gifts always one-time.
+**Left for later:** validation messages from the server stay English; subscription
+behaviour is untested against a live subscription app (Shopify Subscriptions, Loop).
 
 ### Phase 6 — Billing & ecosystem (≈2–3 weeks) → ~97%
 Closes 1.8 and billing rows of 1.10.
