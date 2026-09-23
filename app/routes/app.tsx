@@ -9,6 +9,7 @@ import { backfillShopProfile, ensureShop } from "../lib/shop.server";
 import { ensureWebPixel } from "../lib/pixel.server";
 import { syncPlanFromShopify } from "../lib/billing.server";
 import { I18nProvider, adminLocale, matchLocale, useT } from "../lib/admin-i18n";
+import { aiSettings } from "../lib/ai.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { admin, session } = await authenticate.admin(request);
@@ -20,11 +21,17 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   await syncPlanFromShopify(admin, session.shop);
 
   // eslint-disable-next-line no-undef
-  return { apiKey: process.env.SHOPIFY_API_KEY || "", locale: adminLocale(request) };
+  return {
+    apiKey: process.env.SHOPIFY_API_KEY || "",
+    locale: adminLocale(request),
+    // No AI service configured: the assistant isn't offered at all, rather than
+    // linking to a page that can't do anything.
+    assistant: Boolean(aiSettings()),
+  };
 };
 
 export default function App() {
-  const { apiKey, locale } = useLoaderData<typeof loader>();
+  const { apiKey, locale, assistant } = useLoaderData<typeof loader>();
   // Shopify's `?locale=` is only on the first URL; navigating inside the app
   // drops it, so the language is kept here and confirmed by App Bridge, which
   // knows the staff member's own language.
@@ -39,20 +46,20 @@ export default function App() {
   return (
     <AppProvider embedded apiKey={apiKey}>
       <I18nProvider locale={language}>
-        <Nav />
+        <Nav assistant={assistant} />
         <Outlet />
       </I18nProvider>
     </AppProvider>
   );
 }
 
-function Nav() {
+function Nav({ assistant }: { assistant: boolean }) {
   const t = useT();
   return (
     <s-app-nav>
       <s-link href="/app">{t("Dashboard")}</s-link>
       <s-link href="/app/deals">{t("Deals")}</s-link>
-      <s-link href="/app/assistant">{t("Assistant")}</s-link>
+      {assistant ? <s-link href="/app/assistant">{t("Assistant")}</s-link> : null}
       <s-link href="/app/analytics">{t("Analytics")}</s-link>
       <s-link href="/app/settings">{t("Settings")}</s-link>
       <s-link href="/app/plans">{t("Plans")}</s-link>

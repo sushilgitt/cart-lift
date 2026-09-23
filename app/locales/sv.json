@@ -291,7 +291,7 @@
   "Text": "Text",
   "Text colour": "Textfärg",
   "Text size": "Textstorlek",
-  "The assistant needs an AI API key on the server (CARTLIFT_AI_KEY).": "Assistenten behöver en AI-API-nyckel på servern (CARTLIFT_AI_KEY).",
+  "The assistant isn't switched on for this store.": "Assistenten är inte påslagen för den här butiken.",
   "The assistant writes a draft. It never turns a deal on, and never changes a deal you already published.": "Assistenten skriver ett utkast. Den slår aldrig på ett erbjudande och ändrar aldrig ett erbjudande du redan publicerat.",
   "The product being viewed": "Produkten som visas",
   "The product being viewed plus the items you pick, each with its own discount. Checkout discounts complete sets only.": "Produkten som visas plus de artiklar du väljer, var och en med egen rabatt. I kassan rabatteras endast kompletta set.",

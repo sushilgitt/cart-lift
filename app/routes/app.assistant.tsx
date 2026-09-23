@@ -104,13 +104,18 @@ export default function Assistant() {
 
   const send = (data: Record<string, string>) => fetcher.submit(data, { method: "post" });
 
+  if (!d.configured) {
+    return (
+      <s-page heading={t("Assistant")}>
+        <s-section>
+          <s-paragraph>{t("The assistant isn't switched on for this store.")}</s-paragraph>
+        </s-section>
+      </s-page>
+    );
+  }
+
   return (
     <s-page heading={t("Assistant")}>
-      {!d.configured ? (
-        <s-banner tone="warning">
-          {t("The assistant needs an AI API key on the server (CARTLIFT_AI_KEY).")}
-        </s-banner>
-      ) : null}
       {!d.access.allowed && d.access.reason ? <s-banner tone="info">{d.access.reason}</s-banner> : null}
       {result && !result.ok ? <s-banner tone="critical">{result.error}</s-banner> : null}
 

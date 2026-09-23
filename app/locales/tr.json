@@ -291,7 +291,7 @@
   "Text": "Metin",
   "Text colour": "Metin rengi",
   "Text size": "Metin boyutu",
-  "The assistant needs an AI API key on the server (CARTLIFT_AI_KEY).": "Asistanın sunucuda bir AI API anahtarına ihtiyacı var (CARTLIFT_AI_KEY).",
+  "The assistant isn't switched on for this store.": "Asistan bu mağaza için açık değil.",
   "The assistant writes a draft. It never turns a deal on, and never changes a deal you already published.": "Asistan bir taslak yazar. Hiçbir zaman bir kampanyayı açmaz ve yayınladığınız bir kampanyayı değiştirmez.",
   "The product being viewed": "Görüntülenen ürün",
   "The product being viewed plus the items you pick, each with its own discount. Checkout discounts complete sets only.": "Görüntülenen ürün ve seçtiğiniz öğeler, her biri kendi indirimiyle. Ödeme adımında yalnızca tam setlere indirim uygulanır.",

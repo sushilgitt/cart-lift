@@ -291,7 +291,7 @@
   "Text": "Tekst",
   "Text colour": "Tekstkleur",
   "Text size": "Tekstgrootte",
-  "The assistant needs an AI API key on the server (CARTLIFT_AI_KEY).": "De assistent heeft een AI-API-sleutel op de server nodig (CARTLIFT_AI_KEY).",
+  "The assistant isn't switched on for this store.": "De assistent staat niet aan voor deze winkel.",
   "The assistant writes a draft. It never turns a deal on, and never changes a deal you already published.": "De assistent schrijft een concept. Hij zet nooit een deal aan en wijzigt nooit een deal die je al hebt gepubliceerd.",
   "The product being viewed": "Het product dat wordt bekeken",
   "The product being viewed plus the items you pick, each with its own discount. Checkout discounts complete sets only.": "Het bekeken product plus de items die je kiest, elk met een eigen korting. In de checkout worden alleen complete sets gekort.",

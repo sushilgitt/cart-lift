@@ -800,7 +800,8 @@ function DealEditor({ data }: { data: LoaderData }) {
       <MetafieldVarsEditor vars={config.metafieldVars} onChange={(metafieldVars) => patchConfig({ metafieldVars })} />
 
       {/* ---------------- Assistant ---------------- */}
-      <AssistantPanel
+      {data.assistant.configured ? (
+        <AssistantPanel
         access={data.assistant}
         busy={assisting}
         onAsk={(instruction) => {
@@ -808,9 +809,10 @@ function DealEditor({ data }: { data: LoaderData }) {
           fetcher.submit({ intent: "assist", instruction, deal } as unknown as Record<string, string>, {
             method: "post",
             encType: "application/json",
-          });
-        }}
-      />
+            });
+          }}
+        />
+      ) : null}
 
       {/* ---------------- Translations ---------------- */}
       {data.locales.length > 1 ? (
@@ -1790,11 +1792,7 @@ function AssistantPanel({
         <s-paragraph color="subdued">
           {t("Describe a change and the assistant rewrites the deal here. Nothing is saved until you save it.")}
         </s-paragraph>
-        {!access.configured ? (
-          <s-banner tone="warning">{t("The assistant needs an AI API key on the server (CARTLIFT_AI_KEY).")}</s-banner>
-        ) : !access.allowed && access.reason ? (
-          <s-banner tone="info">{access.reason}</s-banner>
-        ) : null}
+        {!access.allowed && access.reason ? <s-banner tone="info">{access.reason}</s-banner> : null}
         <TextField
           label={t("What should change?")}
           value={instruction}

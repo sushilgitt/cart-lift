@@ -291,7 +291,7 @@
   "Text": "Texto",
   "Text colour": "Cor do texto",
   "Text size": "Tamanho do texto",
-  "The assistant needs an AI API key on the server (CARTLIFT_AI_KEY).": "O assistente precisa de uma chave de API de IA no servidor (CARTLIFT_AI_KEY).",
+  "The assistant isn't switched on for this store.": "O assistente não está ativado nesta loja.",
   "The assistant writes a draft. It never turns a deal on, and never changes a deal you already published.": "O assistente escreve um rascunho. Ele nunca ativa uma oferta nem muda uma oferta que você já publicou.",
   "The product being viewed": "O produto que está sendo visto",
   "The product being viewed plus the items you pick, each with its own discount. Checkout discounts complete sets only.": "O produto que está sendo visto mais os itens que você escolher, cada um com seu próprio desconto. O checkout só dá desconto em conjuntos completos.",
