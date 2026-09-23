@@ -144,13 +144,27 @@ function hiddenInput(form: HTMLFormElement, name: string): HTMLInputElement {
   return input;
 }
 
-/** The form's selling plan: set while subscribed, removed for a one-time purchase. */
+/**
+ * The form's selling plan: set while subscribed, removed for a one-time
+ * purchase. The widget owns an input of its own, so a plan the theme's own
+ * picker left behind can never be posted alongside it.
+ */
 function setSellingPlan(form: HTMLFormElement, plan: number | null | undefined) {
+  const own = form.querySelector<HTMLInputElement>('input[data-cartlift-plan]');
   if (plan == null) {
-    form.querySelectorAll('input[type="hidden"][name="selling_plan"]').forEach((input) => input.remove());
+    own?.remove();
     return;
   }
-  hiddenInput(form, "selling_plan").value = String(plan);
+  if (own) {
+    own.value = String(plan);
+    return;
+  }
+  const input = document.createElement("input");
+  input.type = "hidden";
+  input.name = "selling_plan";
+  input.setAttribute("data-cartlift-plan", "");
+  input.value = String(plan);
+  form.appendChild(input);
 }
 
 interface CartLine {
@@ -424,11 +438,13 @@ function mount(container: HTMLElement, base: SfDeal, data: SfData, form: HTMLFor
     (wrap || q).classList.add("cartlift-hidden");
   });
 
-  // The widget owns the selling plan while its picker is shown.
+  // The widget owns the selling plan while its picker is shown: the theme's
+  // own control is hidden and disabled, so only the widget's plan is posted.
   if (deal.sub?.on) {
-    formControls(form, "selling_plan").forEach((c) => {
-      const wrap = c.closest("[class*='selling-plan'], [class*='subscription'], [class*='purchase-option'], fieldset");
-      (wrap || c).classList.add("cartlift-hidden");
+    formControls(form, "selling_plan").forEach((control) => {
+      control.disabled = true;
+      const wrap = control.closest("[class*='selling-plan'], [class*='subscription'], [class*='purchase-option'], fieldset");
+      (wrap || control).classList.add("cartlift-hidden");
     });
   }
 

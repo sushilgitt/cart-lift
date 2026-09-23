@@ -685,12 +685,18 @@ describe("Phase 5: subscriptions", () => {
     expect(page.input("selling_plan")).toBeUndefined();
   });
 
-  test("the theme's own subscription control is hidden while the widget owns the plan", () => {
+  test("the theme's own subscription control is hidden and disabled, so only our plan is posted", () => {
     const page = productPage(subscribable(), {
       ...withPlans(),
-      inForm: '<fieldset class="selling-plan"><input type="radio" name="selling_plan" value="501"></fieldset>',
+      inForm: '<fieldset class="selling-plan"><input type="radio" name="selling_plan" value="502" checked></fieldset>',
     });
     expect(page.$("fieldset.selling-plan")?.className).toContain("cartlift-hidden");
+    expect((page.$('input[type="radio"][name="selling_plan"]') as unknown as { disabled: boolean }).disabled).toBe(true);
+    page.click('[data-plan="501"]');
+    const posted = Array.from(page.document.querySelectorAll('[name="selling_plan"]'))
+      .filter((el) => !(el as unknown as { disabled: boolean }).disabled)
+      .map((el) => (el as unknown as { value: string }).value);
+    expect(posted).toEqual(["501"]);
   });
 
   test("deals that say nothing about subscriptions are untouched", () => {
