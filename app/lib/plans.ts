@@ -29,11 +29,18 @@ export interface PlanDefinition {
 /** Free days before the first charge, set on every paid plan in the Partner dashboard. */
 export const TRIAL_DAYS = 7;
 
-/** Paying for a year costs about this much less than twelve monthly charges. */
-export const ANNUAL_DISCOUNT = 0.27;
-
-/** A year up front, rounded to the usual .89/.99 shape. */
-const yearly = (monthly: number) => Math.round(monthly * 12 * (1 - ANNUAL_DISCOUNT)) - 0.01;
+/**
+ * What a year up front saves, worked out from the prices themselves rather
+ * than stated twice: every paid plan is ten months' money for twelve months of
+ * app, so this is ~17%. Shown on the billing toggle.
+ */
+export function annualSaving(): number {
+  const paid = PLANS.filter((p) => p.price > 0 && p.annualPrice > 0);
+  if (!paid.length) return 0;
+  const savings = paid.map((p) => 1 - p.annualPrice / (p.price * 12));
+  // Rounded down: the number on the toggle never promises more than a merchant gets.
+  return Math.floor(Math.min(...savings) * 100);
+}
 
 export const PLANS: PlanDefinition[] = [
   {
@@ -50,7 +57,7 @@ export const PLANS: PlanDefinition[] = [
     handle: "starter",
     name: "Starter",
     price: 14.99,
-    annualPrice: yearly(14.99),
+    annualPrice: 149.99,
     limit: 1_000,
     features: ["Everything in Free", "Up to $1,000 added revenue / month", "A/B testing", "Chat support"],
   },
@@ -59,7 +66,7 @@ export const PLANS: PlanDefinition[] = [
     handle: "scale",
     name: "Scale",
     price: 29.99,
-    annualPrice: yearly(29.99),
+    annualPrice: 299.99,
     limit: 5_000,
     features: ["Everything in Starter", "Up to $5,000 added revenue / month"],
   },
@@ -68,7 +75,7 @@ export const PLANS: PlanDefinition[] = [
     handle: "pro",
     name: "Pro",
     price: 59.99,
-    annualPrice: yearly(59.99),
+    annualPrice: 599.99,
     limit: 10_000,
     features: ["Everything in Scale", "Up to $10,000 added revenue / month", "Priority support"],
   },

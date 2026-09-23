@@ -41,14 +41,15 @@ cd extensions/cartlift-discount && npx vitest run   # function tests
 ## Plans (Shopify managed pricing)
 Prices, trials and annual options live in the Partner dashboard; `app/lib/plans.ts`
 only mirrors them. Each plan needs a handle that matches, and an annual variant
-named `<handle>-annual`:
+named `<handle>-annual` (a year is ten months' money, which the plans page
+works out and shows as "save 16%"):
 
-| Handle | Price | Added revenue / month |
-|---|---|---|
-| `free` | $0 | $250 |
-| `starter` | $14.99 | $1,000 |
-| `scale` | $29.99 | $5,000 |
-| `pro` | $59.99 | $10,000 |
+| Handle | Monthly | Yearly (`<handle>-annual`) | Added revenue / month |
+|---|---|---|---|
+| `free` | $0 | — | $250 |
+| `starter` | $14.99 | $149.99 | $1,000 |
+| `scale` | $29.99 | $299.99 | $5,000 |
+| `pro` | $59.99 | $599.99 | $10,000 |
 
 Set a 7-day trial on every paid plan (`TRIAL_DAYS` in `plans.ts` only *says* 7).
 The `Plan` enum in the database also carries four retired FLEX tiers, because

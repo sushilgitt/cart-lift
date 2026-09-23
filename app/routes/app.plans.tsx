@@ -4,7 +4,7 @@ import { useLoaderData } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
-import { ANNUAL_DISCOUNT, PLANS, TRIAL_DAYS, planById, planFrom } from "../lib/plans";
+import { PLANS, TRIAL_DAYS, annualSaving, planById, planFrom } from "../lib/plans";
 import { appHandle, monthlyUsage, syncPlanFromShopify } from "../lib/billing.server";
 import { PlanButton } from "../components/PlanButton";
 import { Select } from "../components/fields";
@@ -78,7 +78,7 @@ export default function Plans() {
             onChange={(value) => setYearly(value === "year")}
             options={[
               { value: "month", label: t("Monthly") },
-              { value: "year", label: t("Yearly (save {{percent}}%)", { percent: Math.round(ANNUAL_DISCOUNT * 100) }) },
+              { value: "year", label: t("Yearly (save {{percent}}%)", { percent: annualSaving() }) },
             ]}
           />
           <s-badge tone="info">{t("{{days}}-day free trial on every paid plan", { days: TRIAL_DAYS })}</s-badge>

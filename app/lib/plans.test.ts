@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { ANNUAL_DISCOUNT, PLANS, TRIAL_DAYS, planById, planFrom } from "./plans";
+import { PLANS, TRIAL_DAYS, annualSaving, planById, planFrom } from "./plans";
 import { planFor } from "./billing.server";
 
 describe("plans", () => {
@@ -14,12 +14,24 @@ describe("plans", () => {
     expect(TRIAL_DAYS).toBe(7);
   });
 
-  test("a year costs about a quarter less than twelve months", () => {
+  test("the prices are the ones we advertise", () => {
+    expect(PLANS.map((p) => [p.name, p.price, p.annualPrice])).toEqual([
+      ["Free", 0, 0],
+      ["Starter", 14.99, 149.99],
+      ["Scale", 29.99, 299.99],
+      ["Pro", 59.99, 599.99],
+    ]);
+  });
+
+  test("a year up front is ten months' money, and the toggle says so", () => {
     for (const plan of PLANS.filter((p) => p.price > 0)) {
       const saved = 1 - plan.annualPrice / (plan.price * 12);
-      expect(saved, plan.name).toBeGreaterThan(ANNUAL_DISCOUNT - 0.01);
-      expect(saved, plan.name).toBeLessThan(ANNUAL_DISCOUNT + 0.01);
+      // Every paid plan saves the same ~17%, so one number on the toggle is honest.
+      expect(saved, plan.name).toBeGreaterThan(0.16);
+      expect(saved, plan.name).toBeLessThan(0.17);
     }
+    // Rounded down, never overstating what the merchant saves.
+    expect(annualSaving()).toBe(16);
   });
 
   test("the upgrade prompt suggests the cheapest plan that covers the month", () => {
