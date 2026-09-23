@@ -613,3 +613,89 @@ describe("Phase 5: translations", () => {
     expect(page.$(".cl-savings")?.textContent).toBe("You save $4.00");
   });
 });
+
+describe("Phase 5: subscriptions", () => {
+  const PLAN = 501;
+  const PLAN_6W = 502;
+  const sp = [{ id: "g1", name: "Subscribe and save", plans: [{ id: PLAN, name: "Every 2 weeks" }, { id: PLAN_6W, name: "Every 6 weeks" }] }];
+  const spa = {
+    "11": [{ p: PLAN, price: 1800, cap: 2000 }, { p: PLAN_6W, price: 1900, cap: null }],
+    "12": [{ p: PLAN, price: 1800, cap: 2000 }, { p: PLAN_6W, price: 1900, cap: null }],
+  };
+  const subscribable = (sub: Json = {}, bars?: unknown[]) =>
+    deal(bars ?? [bar({ id: "b1" }), bar({ id: "b2", qty: 2, dt: "percentage", dv: 10, selected: true })], {
+      sub: { on: true, apply: "b", one: "One-time purchase", sub: "Subscribe & save", pre: "one", ...sub },
+    });
+  const withPlans = (extra: Json = {}) => ({ extra: { sp, spa, ...extra } });
+
+  test("the picker shows both prices and re-prices every bar when the shopper subscribes", () => {
+    const page = productPage(subscribable(), withPlans());
+    expect(page.document.querySelectorAll(".cl-plan")).toHaveLength(2);
+    expect(page.$(".cl-plan.is-selected .cl-plan-name")?.textContent).toBe("One-time purchase");
+    expect(page.$(".cl-bar.is-selected .cl-price")?.textContent).toBe("$36.00"); // 2 × $20 − 10%
+    page.click('[data-plan="501"]');
+    expect(page.$(".cl-plan.is-selected .cl-plan-name")?.textContent).toBe("Subscribe & save");
+    // The plan's $18.00 is what the deal discounts.
+    expect(page.$(".cl-bar.is-selected .cl-price")?.textContent).toBe("$32.40");
+    expect(page.$('[data-bar="b1"] .cl-price')?.textContent).toBe("$18.00");
+  });
+
+  test("the subscribed line carries the selling plan, through the form and through the widget's own add", () => {
+    const gift = { id: 555, title: "Socks", image: null, price: "5.00", text: "+ FREE gift" };
+    const page = productPage(subscribable({}, [bar({ id: "b1", selected: true }), bar({ id: "b2", qty: 2, gift })]), withPlans());
+    expect(page.input("selling_plan")).toBeUndefined();
+    page.click('[data-plan="501"]');
+    expect(page.input("selling_plan")).toBe("501");
+    // Back to one-time: the form must not keep sending a plan.
+    page.click('[data-plan=""]');
+    expect(page.input("selling_plan")).toBeUndefined();
+
+    page.click('[data-plan="501"]');
+    page.click('[data-bar="b2"]');
+    expect(page.submit()).toBe(true);
+    expect(page.added()).toEqual({
+      items: [
+        { id: 11, quantity: 2, properties: { _cartlift: "d1", _cartlift_arm: "A" }, selling_plan: PLAN },
+        // The gift is a one-time item, never a subscription.
+        { id: 555, quantity: 1, properties: { _cartlift_gift: "d1" } },
+      ],
+    });
+  });
+
+  test("choosing a frequency prices the deal on that plan", () => {
+    const page = productPage(subscribable({ pre: "sub" }), withPlans());
+    expect(page.$(".cl-plan.is-selected .cl-plan-name")?.textContent).toBe("Subscribe & save");
+    expect(page.$(".cl-bar.is-selected .cl-price")?.textContent).toBe("$32.40");
+    page.choose(".cl-plan-freq", String(PLAN_6W));
+    expect(page.$(".cl-bar.is-selected .cl-price")?.textContent).toBe("$34.20"); // 2 × $19 − 10%
+    expect(page.input("selling_plan")).toBe("502");
+  });
+
+  test("a subscription-only deal offers no one-time option", () => {
+    const page = productPage(subscribable({ apply: "s" }), withPlans());
+    expect(page.document.querySelectorAll(".cl-plan")).toHaveLength(1);
+    expect(page.$(".cl-plan.is-selected .cl-plan-name")?.textContent).toBe("Subscribe & save");
+    expect(page.input("selling_plan")).toBe("501");
+  });
+
+  test("a product without selling plans shows no picker and adds nothing extra", () => {
+    const page = productPage(subscribable(), { extra: { sp: [], spa: {} } });
+    expect(page.$(".cl-plans")).toBe(null);
+    expect(page.$(".cl-bar.is-selected .cl-price")?.textContent).toBe("$36.00");
+    expect(page.input("selling_plan")).toBeUndefined();
+  });
+
+  test("the theme's own subscription control is hidden while the widget owns the plan", () => {
+    const page = productPage(subscribable(), {
+      ...withPlans(),
+      inForm: '<fieldset class="selling-plan"><input type="radio" name="selling_plan" value="501"></fieldset>',
+    });
+    expect(page.$("fieldset.selling-plan")?.className).toContain("cartlift-hidden");
+  });
+
+  test("deals that say nothing about subscriptions are untouched", () => {
+    const page = productPage(deal([bar({ id: "b1", selected: true })]), withPlans());
+    expect(page.$(".cl-plans")).toBe(null);
+    expect(page.$(".cl-bar.is-selected .cl-price")?.textContent).toBe("$20.00");
+  });
+});

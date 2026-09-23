@@ -18,6 +18,8 @@ type LineSpec = {
   collections?: string[];
   /** Search & Discovery complementary product GIDs of this line's product. */
   complementary?: string[];
+  /** The line is a subscription: it carries a selling plan. */
+  plan?: string;
 };
 
 function input(config: FnConfig, lines: LineSpec[], rate = 1, country = "US") {
@@ -36,6 +38,7 @@ function input(config: FnConfig, lines: LineSpec[], rate = 1, country = "US") {
         gift: l.gift ? { value: l.gift } : null,
         upsell: l.upsell ? { value: l.upsell } : null,
         bundle: l.bundle ? { value: l.bundle } : null,
+        sellingPlanAllocation: l.plan ? { sellingPlan: { id: l.plan } } : null,
         merchandise: {
           __typename: "ProductVariant",
           id: l.variant ?? `gid://shopify/ProductVariant/${i + 1}`,
@@ -529,5 +532,41 @@ describe("markets", () => {
   test("unknown country: only unrestricted deals run", () => {
     const onlyEu: FnConfig = { deals: [config.deals![0]] };
     expect(candidates(cartLinesDiscountsGenerateRun(input(onlyEu, two, 1, "")))).toHaveLength(0);
+  });
+});
+
+describe("subscriptions", () => {
+  const PLAN = "gid://shopify/SellingPlan/5";
+  const bars = (m = "Save 20%") => [{ id: "b2", q: 2, k: "q" as const, dt: "percentage" as const, dv: 20, m }];
+  const deal = (sub?: "s" | "o", id = "d1", name = "Save 20%") => ({ id, tt: "ALL" as const, name, bars: bars(name), ...(sub ? { sub } : {}) });
+
+  test("by default both one-time and subscription lines are priced", () => {
+    const config: FnConfig = { deals: [deal()] };
+    expect(candidates(cartLinesDiscountsGenerateRun(input(config, [{ qty: 2, price: 10 }])))).toHaveLength(1);
+    expect(candidates(cartLinesDiscountsGenerateRun(input(config, [{ qty: 2, price: 10, plan: PLAN }])))).toHaveLength(1);
+  });
+
+  test("subscription-only: one-time lines are left alone", () => {
+    const config: FnConfig = { deals: [deal("s")] };
+    expect(candidates(cartLinesDiscountsGenerateRun(input(config, [{ qty: 2, price: 10, plan: PLAN }])))[0].message).toBe("Save 20%");
+    expect(candidates(cartLinesDiscountsGenerateRun(input(config, [{ qty: 2, price: 10 }])))).toHaveLength(0);
+  });
+
+  test("one-time only: subscription lines are left alone", () => {
+    const config: FnConfig = { deals: [deal("o")] };
+    expect(candidates(cartLinesDiscountsGenerateRun(input(config, [{ qty: 2, price: 10 }])))[0].message).toBe("Save 20%");
+    expect(candidates(cartLinesDiscountsGenerateRun(input(config, [{ qty: 2, price: 10, plan: PLAN }])))).toHaveLength(0);
+  });
+
+  test("a line the widget tagged for a deal that skips its purchase type falls to the next deal", () => {
+    const config: FnConfig = { deals: [deal("o", "onetime", "One-time"), deal(undefined, "any", "Anything")] };
+    const c = candidates(cartLinesDiscountsGenerateRun(input(config, [{ qty: 2, price: 10, plan: PLAN, deal: "onetime" }])));
+    expect(c[0].message).toBe("Anything");
+  });
+
+  test("the two kinds don't fill one tier together", () => {
+    const config: FnConfig = { deals: [deal("s")] };
+    const mixed = [{ qty: 1, price: 10, plan: PLAN }, { qty: 1, price: 10 }];
+    expect(candidates(cartLinesDiscountsGenerateRun(input(config, mixed)))).toHaveLength(0);
   });
 });

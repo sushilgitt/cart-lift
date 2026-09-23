@@ -129,6 +129,11 @@ export function buildFunctionConfig(deals: Deal[], countries = new Map<string, s
       across: config.across,
       ...(pool ? { mm: { tt: pool.tt, p: pool.products.map((p) => p.id), c: pool.collections.map((c) => c.id) } } : {}),
       ...(dealCountries(config, countries).length ? { ctry: dealCountries(config, countries) } : {}),
+      ...(config.subscriptions.apply === "subscription"
+        ? { sub: "s" }
+        : config.subscriptions.apply === "onetime"
+          ? { sub: "o" }
+          : {}),
       name: deal.name,
       bars,
       ...(arms.length ? { arms: Object.fromEntries(arms.map((k) => [k, functionBars(armConfig(config, k), deal.name)])) } : {}),
@@ -222,6 +227,11 @@ export function buildGiftConfig(deals: Deal[], countries = new Map<string, strin
       across: config.across,
       ...(pool ? { mm: { tt: pool.tt, p: pool.products.map((p) => id(p.id)), c: pool.collections.map((c) => id(c.id)) } } : {}),
       ...(dealCountries(config, countries).length ? { ctry: dealCountries(config, countries) } : {}),
+      ...(config.subscriptions.apply === "subscription"
+        ? { sub: "s" as const }
+        : config.subscriptions.apply === "onetime"
+          ? { sub: "o" as const }
+          : {}),
       bars: giftBars(config),
       ...(arms.length ? { arms: Object.fromEntries(arms.map((k) => [k, giftBars(armConfig(config, k))])) } : {}),
     };

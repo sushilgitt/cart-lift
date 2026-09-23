@@ -26,15 +26,30 @@ if (!w.CartLift?.loaded) {
   const CL: CartLiftGlobal = (w.CartLift = w.CartLift || {});
   CL.loaded = true;
 
+  /**
+   * The preview can't know a selling plan's real price (that's storefront
+   * data), so it shows a sample plan at the product's own price: the merchant
+   * sees the picker and its texts, not an invented discount.
+   */
+  const previewPlans = (deal: SfDeal, ctx: RenderCtx): RenderCtx => {
+    if (!deal.sub?.on || ctx.plans?.length) return ctx;
+    const alloc: Record<string, { p: number; price: number; cap: null }[]> = {};
+    for (const variant of ctx.product.variants || []) {
+      alloc[String(variant.id)] = [{ p: 1, price: Number(variant.price) || 0, cap: null }];
+    }
+    return { ...ctx, plans: [{ id: "preview", name: "Subscription", plans: [{ id: 1, name: "Every 2 weeks" }] }], alloc };
+  };
+
   /** Admin live preview. Returns an updater. */
   CL.preview = (el, deal, ctx) => {
-    ctx = { ...ctx, preview: true };
+    ctx = previewPlans(deal, { ...ctx, preview: true });
     const state: RenderState = {
       barId: initialBar(deal.bars),
       variantId: ctx.product.variants[0] && ctx.product.variants[0].id,
       unitVariants: [],
       upsells: {},
       bars: deal.bars,
+      plan: deal.sub?.on && (deal.sub.pre === "sub" || deal.sub.apply === "s") ? 1 : null,
     };
     const draw = () => {
       el.innerHTML = renderDeal(deal, state, ctx);
@@ -42,6 +57,12 @@ if (!w.CartLift?.loaded) {
     el.onclick = (e) => {
       const target = e.target as Element;
       if (target.closest("select, input")) return;
+      const plan = target.closest<HTMLElement>("[data-plan]");
+      if (plan) {
+        state.plan = plan.dataset.plan ? Number(plan.dataset.plan) : null;
+        draw();
+        return;
+      }
       const bar = target.closest("[data-bar]");
       if (bar) {
         state.barId = bar.getAttribute("data-bar") || undefined;
@@ -51,7 +72,7 @@ if (!w.CartLift?.loaded) {
     draw();
     return (nextDeal, nextCtx) => {
       deal = nextDeal;
-      ctx = nextCtx ? { ...nextCtx, preview: true } : ctx;
+      ctx = previewPlans(deal, nextCtx ? { ...nextCtx, preview: true } : ctx);
       state.bars = deal.bars;
       if (!deal.bars.some((b) => b.id === state.barId)) state.barId = initialBar(deal.bars);
       draw();

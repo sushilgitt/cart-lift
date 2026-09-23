@@ -46,6 +46,8 @@ export interface GiftDeal extends Targeted<number> {
   arms?: Record<string, GiftBar[]>;
   /** Countries of the deal's markets (missing = everywhere). */
   ctry?: string[];
+  /** Purchases the deal counts: "s" subscriptions only, "o" one-time only, missing = both. */
+  sub?: "s" | "o";
 }
 
 /** Bars of an arm, as the Function picks them. */
@@ -95,6 +97,8 @@ export function planGifts(
   const byId = new Map(deals.map((d) => [d.id, d]));
 
   const eligible = (deal: GiftDeal, line: AjaxLine) => {
+    // The Function skips lines of the wrong purchase type; the watcher must too.
+    if (deal.sub && Boolean(line.selling_plan_allocation) !== (deal.sub === "s")) return false;
     const member = cols[Number(line.product_id)];
     return dealMatches(deal, Number(line.product_id), (c) => (member ? member.includes(Number(c)) : null));
   };

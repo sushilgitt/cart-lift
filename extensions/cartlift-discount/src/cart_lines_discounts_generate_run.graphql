@@ -33,6 +33,12 @@ query CartInput($collectionIds: [ID!]) {
       bundle: attribute(key: "_cartlift_bundle") {
         value
       }
+      # A subscription line: the deal decides whether it counts (FnDeal.sub).
+      sellingPlanAllocation {
+        sellingPlan {
+          id
+        }
+      }
       merchandise {
         __typename
         ... on ProductVariant {

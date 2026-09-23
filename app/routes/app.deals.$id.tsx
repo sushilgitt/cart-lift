@@ -42,6 +42,7 @@ import {
   type BrandPalette,
   type BundleItem,
   type DealTranslation,
+  type Subscriptions,
   type DiscountType,
   type MetafieldVar,
   type MixMatch,
@@ -763,6 +764,12 @@ function DealEditor({ data }: { data: LoaderData }) {
         />
       ) : null}
 
+      {/* ---------------- Subscriptions ---------------- */}
+      <SubscriptionsEditor
+        subs={config.subscriptions}
+        onChange={(changes) => patchConfig({ subscriptions: { ...config.subscriptions, ...changes } })}
+      />
+
       {/* ---------------- Mix & match ---------------- */}
       <MixMatchEditor
         mm={config.mixMatch}
@@ -1379,6 +1386,66 @@ function BundleItemsEditor({
         </div>
       ) : null}
     </s-stack>
+  );
+}
+
+/** Selling plans: which purchases the deal prices, and the widget's picker. */
+function SubscriptionsEditor({
+  subs,
+  onChange,
+}: {
+  subs: Subscriptions;
+  onChange: (changes: Partial<Subscriptions>) => void;
+}) {
+  return (
+    <s-section heading="Subscriptions">
+      <s-stack gap="base">
+        <Select
+          label="This deal applies to"
+          value={subs.apply}
+          onChange={(apply) => onChange({ apply: apply as Subscriptions["apply"] })}
+          options={[
+            { value: "both", label: "One-time and subscription purchases" },
+            { value: "subscription", label: "Subscription purchases only" },
+            { value: "onetime", label: "One-time purchases only" },
+          ]}
+        />
+        <Checkbox
+          label="Show a one-time / subscribe picker"
+          details="For products with a selling plan. The picker prices the whole deal from the plan the shopper chooses."
+          checked={subs.enabled}
+          onChange={(enabled) => onChange({ enabled })}
+        />
+        {subs.enabled ? (
+          <>
+            <Grid>
+              <TextField
+                label="One-time text"
+                value={subs.onetimeLabel}
+                onChange={(onetimeLabel) => onChange({ onetimeLabel })}
+              />
+              <TextField
+                label="Subscribe text"
+                value={subs.subscribeLabel}
+                onChange={(subscribeLabel) => onChange({ subscribeLabel })}
+              />
+            </Grid>
+            <Select
+              label="Selected when the page opens"
+              value={subs.preselect}
+              onChange={(preselect) => onChange({ preselect: preselect as Subscriptions["preselect"] })}
+              options={[
+                { value: "onetime", label: "One-time purchase" },
+                { value: "subscribe", label: "Subscribe" },
+              ]}
+            />
+            <s-paragraph color="subdued">
+              Free gifts are always added as one-time items, never as a subscription.
+            </s-paragraph>
+          </>
+        ) : null}
+      </s-stack>
+    </s-section>
   );
 }
 

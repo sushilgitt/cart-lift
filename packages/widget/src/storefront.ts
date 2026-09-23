@@ -6,11 +6,13 @@ import {
   initialBar,
   mixSlots,
   pickerRows,
+  planUnit,
+  plansFor,
   renderDeal,
   upsellEntries,
   upsellOn,
 } from "./render";
-import { DEFAULT_STRINGS, type MixPick, type RenderState, type SfArm, type SfBar, type SfData, type SfDeal, type SfMixMatch, type SfProduct, type SfRecommended, type SfStrings } from "./types";
+import { type MixPick, type RenderState, type SfArm, type SfBar, type SfData, type SfDeal, type SfMixMatch, type SfProduct, type SfRecommended, type SfStrings } from "./types";
 import { stringsFor, translateDeal } from "./i18n";
 import { withOption } from "./variants";
 
@@ -142,10 +144,21 @@ function hiddenInput(form: HTMLFormElement, name: string): HTMLInputElement {
   return input;
 }
 
+/** The form's selling plan: set while subscribed, removed for a one-time purchase. */
+function setSellingPlan(form: HTMLFormElement, plan: number | null | undefined) {
+  if (plan == null) {
+    form.querySelectorAll('input[type="hidden"][name="selling_plan"]').forEach((input) => input.remove());
+    return;
+  }
+  hiddenInput(form, "selling_plan").value = String(plan);
+}
+
 interface CartLine {
   id: number;
   quantity: number;
   properties: Record<string, string>;
+  /** Subscription lines: the selling plan the shopper picked. */
+  selling_plan?: number;
 }
 
 interface DawnDrawer extends HTMLElement {
@@ -370,7 +383,16 @@ function mount(container: HTMLElement, base: SfDeal, data: SfData, form: HTMLFor
   const rate = Number(shopify()?.currency?.rate) || 1;
   // This page's language: the widget's own words, and the deal's texts.
   const words = stringsFor(data.i18n);
-  const ctx = { product: data.product, moneyFormat: data.moneyFormat, rate, options: data.options, mf: data.mf, strings: words };
+  const ctx = {
+    product: data.product,
+    moneyFormat: data.moneyFormat,
+    rate,
+    options: data.options,
+    mf: data.mf,
+    strings: words,
+    plans: data.sp,
+    alloc: data.spa,
+  };
   const translated = translateDeal(base, data.i18n);
   const arm = pickArm(translated);
   const deal = armDeal(translated, arm);
@@ -383,7 +405,13 @@ function mount(container: HTMLElement, base: SfDeal, data: SfData, form: HTMLFor
     upsells: {},
     bars: arm.bars,
     mix: {},
+    // A deal only for subscriptions, or one that asks for it, starts subscribed.
+    plan: null,
   };
+  if (deal.sub?.on) {
+    const first = plansFor(deal, state.variantId ?? "", ctx)[0];
+    if (first && (deal.sub.pre === "sub" || deal.sub.apply === "s")) state.plan = first.p;
+  }
   const api = data.config.api;
   const emit = (name: string, detail: Record<string, unknown>) =>
     container.dispatchEvent(new CustomEvent(name, { bubbles: true, detail: { dealId: deal.id, ...detail } }));
@@ -396,12 +424,27 @@ function mount(container: HTMLElement, base: SfDeal, data: SfData, form: HTMLFor
     (wrap || q).classList.add("cartlift-hidden");
   });
 
+  // The widget owns the selling plan while its picker is shown.
+  if (deal.sub?.on) {
+    formControls(form, "selling_plan").forEach((c) => {
+      const wrap = c.closest("[class*='selling-plan'], [class*='subscription'], [class*='purchase-option'], fieldset");
+      (wrap || c).classList.add("cartlift-hidden");
+    });
+  }
+
   // `_cartlift_bar` tells checkout which of two bars with the same quantity was
   // picked. Only sent when needed: otherwise the same product added from two
   // bars would become two cart lines.
   const tiedQuantities = arm.bars.some((b, i) => arm.bars.some((o, j) => j !== i && o.qty === b.qty));
 
   const selectedBar = () => state.bars.find((b) => b.id === state.barId);
+
+  /** The chosen selling plan, for a variant that can actually be bought on it. */
+  function planFor(variantId: string): { selling_plan?: number } {
+    if (state.plan == null) return {};
+    const allocations = data.spa?.[String(variantId)] ?? [];
+    return allocations.some((a) => a.p === state.plan) ? { selling_plan: state.plan } : {};
+  }
 
   function lines(): CartLine[] {
     const bar = selectedBar();
@@ -421,7 +464,7 @@ function mount(container: HTMLElement, base: SfDeal, data: SfData, form: HTMLFor
         if (it.v == null) own._cartlift_main = "1";
         const same = items.find((l) => l.id === id && JSON.stringify(l.properties) === JSON.stringify(own));
         if (same) same.quantity += it.q;
-        else items.push({ id, quantity: it.q, properties: own });
+        else items.push({ id, quantity: it.q, properties: own, ...planFor(String(id)) });
       }
     } else {
       const slots = mixSlots(deal, bar);
@@ -432,7 +475,7 @@ function mount(container: HTMLElement, base: SfDeal, data: SfData, form: HTMLFor
         counts[id] = (counts[id] || 0) + 1;
       }
       Object.keys(counts).forEach((id) => {
-        items.push({ id: Number(id), quantity: counts[id], properties: props });
+        items.push({ id: Number(id), quantity: counts[id], properties: props, ...planFor(id) });
       });
     }
     barGifts(bar).forEach((gift) => items.push({ id: gift.id, quantity: 1, properties: { _cartlift_gift: deal.id } }));
@@ -469,12 +512,15 @@ function mount(container: HTMLElement, base: SfDeal, data: SfData, form: HTMLFor
   /** What the selected bar costs, as the widget shows it (cents). */
   function barTotal(bar: SfBar): number {
     const variant = data.product.variants.find((v) => String(v.id) === String(state.variantId)) || data.product.variants[0];
-    const unit = Number(variant.price) || 0;
+    const plans = plansFor(deal, variant.id, ctx);
+    const plan = state.plan ?? (deal.sub?.apply === "s" ? plans[0]?.p : null);
+    const priced = planUnit(variant, plans.length ? plan : null, plans);
+    const unit = priced.unit;
     if (bar.kind === "bundle") return bundlePrice(bar, unit, rate).total;
     const slots = mixSlots(deal, bar);
     const picks = slots ? Array.from({ length: slots - 1 }, (_, i) => state.mix?.[i + 1]) : [];
     if (picks.length && picks.every(Boolean)) return priceMixed(bar, [unit, ...picks.map((p) => p!.price)], rate).total;
-    const compare = deal.style?.useCompareAt ? Number(variant.compare_at_price) || 0 : 0;
+    const compare = deal.style?.useCompareAt ? Number(priced.compare) || 0 : 0;
     return priceBar(bar, unit, compare, rate).total;
   }
 
@@ -488,6 +534,7 @@ function mount(container: HTMLElement, base: SfDeal, data: SfData, form: HTMLFor
       q.value = String(quantity);
     });
     hiddenInput(form, "properties[_cartlift]").value = deal.id;
+    if (deal.sub?.on) setSellingPlan(form, state.plan);
     hiddenInput(form, "properties[_cartlift_arm]").value = arm.key;
     if (tiedQuantities) hiddenInput(form, "properties[_cartlift_bar]").value = bar.id;
     const items = lines();
@@ -516,6 +563,14 @@ function mount(container: HTMLElement, base: SfDeal, data: SfData, form: HTMLFor
     state.unitVariants = defaultUnits(state.bars.find((b) => b.id === barId), data.product);
     draw();
     emit("cartlift:bar-selected", { barId });
+  }
+
+  /** One-time or a selling plan; the whole deal is priced from it. */
+  function pickPlan(plan: number | null) {
+    if (plan === state.plan) return;
+    state.plan = plan;
+    draw();
+    emit("cartlift:plan-selected", { sellingPlan: plan });
   }
 
   /** Sets option `opt` of unit `unit` to `value`. */
@@ -548,6 +603,12 @@ function mount(container: HTMLElement, base: SfDeal, data: SfData, form: HTMLFor
       });
       return;
     }
+    const plan = target.closest<HTMLElement>("[data-plan]");
+    if (plan && !target.closest("select")) {
+      e.preventDefault();
+      pickPlan(plan.dataset.plan ? Number(plan.dataset.plan) : null);
+      return;
+    }
     if (target.closest("select, input, label.cl-upsell")) return;
     const bar = target.closest("[data-bar]");
     if (bar) choose(bar.getAttribute("data-bar")!);
@@ -564,6 +625,10 @@ function mount(container: HTMLElement, base: SfDeal, data: SfData, form: HTMLFor
     const t = e.target as HTMLInputElement;
     if (t.hasAttribute("data-opt")) {
       pickOption(Number(t.getAttribute("data-unit")), Number(t.getAttribute("data-opt")), t.value);
+      return;
+    }
+    if (t.hasAttribute("data-plan-select")) {
+      pickPlan(Number(t.value));
       return;
     }
     if (t.hasAttribute("data-upsell")) state.upsells[t.getAttribute("data-upsell")!] = t.checked;

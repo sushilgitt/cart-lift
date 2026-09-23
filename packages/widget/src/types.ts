@@ -136,6 +136,34 @@ export interface SfArm {
   showVariantPicker?: boolean;
 }
 
+/** A selling plan group of the product (Liquid `product.selling_plan_groups`). */
+export interface SfPlanGroup {
+  id: string;
+  name: string;
+  plans: { id: number; name: string }[];
+}
+
+/** A variant's price on one selling plan (`variant.selling_plan_allocations`). */
+export interface SfAllocation {
+  /** Selling plan id. */
+  p: number;
+  /** Price in presentment cents. */
+  price: number;
+  /** Compare-at price, when the plan has one. */
+  cap: number | null;
+}
+
+/** Subscriptions: what the deal does with selling plans. */
+export interface SfSubscriptions {
+  /** Show the one-time / subscribe picker. */
+  on: boolean;
+  /** Purchases the deal prices: both, subscription only, one-time only. */
+  apply: "b" | "s" | "o";
+  one: string;
+  sub: string;
+  pre: "one" | "sub";
+}
+
 export interface SfDeal {
   id: string;
   name: string;
@@ -157,6 +185,8 @@ export interface SfDeal {
   mm?: SfMixMatch;
   /** Countries of the deal's markets (missing = everywhere). */
   ctry?: string[];
+  /** Subscriptions (Phase 5); missing = one-time and subscription alike, no picker. */
+  sub?: SfSubscriptions;
   /** A/B arms (Phase 3). */
   arms?: SfArm[];
   weightA?: number;
@@ -238,6 +268,8 @@ export interface SfDealTranslation {
   savingsText?: string;
   modalTitle?: string;
   modalButton?: string;
+  onetimeLabel?: string;
+  subscribeLabel?: string;
   bars?: Record<string, { title?: string; subtitle?: string; label?: string; badge?: string; giftText?: string; highlights?: string[] }>;
   upsells?: Record<string, string>;
 }
@@ -257,6 +289,10 @@ export interface SfData {
   country?: string;
   /** This page's language, when the merchant translated the deal. */
   i18n?: SfI18n | null;
+  /** The product's selling plan groups, for the subscribe picker. */
+  sp?: SfPlanGroup[];
+  /** Selling plan prices per variant id. */
+  spa?: Record<string, SfAllocation[]>;
   placement: "auto" | "block";
 }
 
@@ -273,6 +309,8 @@ export interface RenderState {
   variantId: number | string | undefined;
   unitVariants: (number | string)[];
   upsells: Record<string, boolean>;
+  /** The selling plan the shopper picked; missing / null = one-time. */
+  plan?: number | null;
   bars?: SfBar[];
   /** Complementary products, once fetched. */
   complementary?: SfRecommended[];
@@ -299,4 +337,7 @@ export interface RenderCtx {
   preview?: boolean;
   options?: SfOptionSwatches[];
   mf?: Record<string, unknown>;
+  /** Selling plans of the product, and each variant's price on them. */
+  plans?: SfPlanGroup[];
+  alloc?: Record<string, SfAllocation[]>;
 }

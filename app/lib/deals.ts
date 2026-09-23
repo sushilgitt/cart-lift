@@ -167,6 +167,8 @@ export interface DealTranslation {
   savingsText?: string;
   modalTitle?: string;
   modalButton?: string;
+  onetimeLabel?: string;
+  subscribeLabel?: string;
   bars?: Record<string, { title?: string; subtitle?: string; label?: string; badge?: string; giftText?: string; highlights?: string[] }>;
   upsells?: Record<string, string>;
 }
@@ -262,6 +264,27 @@ export interface DealStyle {
   colors: DealColors;
 }
 
+/**
+ * Subscriptions (selling plans). `apply` decides which purchases the deal
+ * discounts; `enabled` adds the one-time / subscribe picker to the widget for
+ * products that have a selling plan.
+ */
+export interface Subscriptions {
+  enabled: boolean;
+  apply: "both" | "subscription" | "onetime";
+  onetimeLabel: string;
+  subscribeLabel: string;
+  preselect: "onetime" | "subscribe";
+}
+
+export const DEFAULT_SUBSCRIPTIONS: Subscriptions = {
+  enabled: false,
+  apply: "both",
+  onetimeLabel: "One-time purchase",
+  subscribeLabel: "Subscribe & save",
+  preselect: "onetime",
+};
+
 export interface DealConfig {
   bars: Bar[];
   style: DealStyle;
@@ -279,6 +302,8 @@ export interface DealConfig {
   translations: Record<string, DealTranslation>;
   /** A bar also gets the gifts of every smaller bar. */
   progressiveGifts: boolean;
+  /** Subscription (selling plan) purchases. */
+  subscriptions: Subscriptions;
   mixMatch: MixMatch;
   abTest: AbTest;
   /** Discount name in cart/checkout; empty = bar title. */
@@ -351,10 +376,10 @@ export const TEMPLATES: Record<TemplateKey, { title: string; description: string
     available: true,
   },
   subscription: {
-    title: "Subscription",
-    description: "Subscribe-and-save bundles. Coming soon.",
+    title: "Subscribe & save",
+    description: "Bundles for subscription products, with a one-time / subscribe picker.",
     type: "QUANTITY_BREAK",
-    available: false,
+    available: true,
   },
 };
 
@@ -369,6 +394,12 @@ export function templateConfig(template: TemplateKey): DealConfig {
     config.bars = [
       newBar({ qty: 1, title: "Just this", subtitle: "Standard price" }),
       newBundleBar({ selected: true, badge: "Best value" }),
+    ];
+  } else if (template === "subscription") {
+    config.subscriptions = { ...DEFAULT_SUBSCRIPTIONS, enabled: true };
+    config.bars = [
+      newBar({ qty: 1, title: "Just this", subtitle: "Standard price" }),
+      newBar({ qty: 2, discountType: "percentage", discountValue: 10, title: "Buy 2", subtitle: "You save {{saved_percentage}}", selected: true }),
     ];
   } else if (template === "progressive_gifts") {
     config.progressiveGifts = true;
@@ -622,6 +653,7 @@ export function defaultConfig(type: DealTypeKey): DealConfig {
     markets: [],
     translations: {},
     progressiveGifts: false,
+    subscriptions: { ...DEFAULT_SUBSCRIPTIONS },
     mixMatch: { ...DEFAULT_MIX_MATCH },
     abTest: { ...DEFAULT_AB_TEST, weights: { A: 100 }, arms: {} },
     discountName: "",
@@ -726,6 +758,8 @@ function normalizeTranslations(raw: unknown): Record<string, DealTranslation> {
       savingsText: str(t.savingsText) || undefined,
       modalTitle: str(t.modalTitle) || undefined,
       modalButton: str(t.modalButton) || undefined,
+      onetimeLabel: str(t.onetimeLabel) || undefined,
+      subscribeLabel: str(t.subscribeLabel) || undefined,
       bars,
       upsells,
     };
@@ -760,6 +794,10 @@ export function translatableTexts(config: DealConfig): Record<string, string> {
   if (config.mixMatch.enabled) {
     add("modalTitle", config.mixMatch.modalTitle);
     add("modalButton", config.mixMatch.buttonText);
+  }
+  if (config.subscriptions.enabled) {
+    add("onetimeLabel", config.subscriptions.onetimeLabel);
+    add("subscribeLabel", config.subscriptions.subscribeLabel);
   }
   for (const bar of config.bars) {
     add(`bars.${bar.id}.title`, bar.title);
@@ -901,6 +939,14 @@ export function normalizeConfig(raw: unknown, type: DealTypeKey = "QUANTITY_BREA
       : [],
     markets: refs(r.markets, 50),
     translations: normalizeTranslations(r.translations),
+    subscriptions: {
+      enabled: Boolean(r.subscriptions?.enabled),
+      apply: oneOf(r.subscriptions?.apply, ["both", "subscription", "onetime"] as const, "both"),
+      // A blank label would leave the picker with an unnamed option.
+      onetimeLabel: str(r.subscriptions?.onetimeLabel).trim() || DEFAULT_SUBSCRIPTIONS.onetimeLabel,
+      subscribeLabel: str(r.subscriptions?.subscribeLabel).trim() || DEFAULT_SUBSCRIPTIONS.subscribeLabel,
+      preselect: oneOf(r.subscriptions?.preselect, ["onetime", "subscribe"] as const, "onetime"),
+    },
     discountName: str(r.discountName),
   };
 }
@@ -1166,6 +1212,7 @@ export function storefrontDeal(deal: DealLike, palette?: BrandPalette | null) {
     mfv: config.metafieldVars.map((m) => ({ name: m.name, k: metafieldKey(m) })),
     style: publishedStyle(config.style, palette),
     bars: config.bars.map((bar) => storefrontBar(bar, config)),
+    ...subscriptionsStorefront(config),
     ...mixMatchStorefront(config, deal),
     ...abStorefront(config, palette),
   };
@@ -1190,6 +1237,21 @@ function abStorefront(config: DealConfig, palette?: BrandPalette | null) {
           showVariantPicker: c.showVariantPicker,
         };
       }),
+  };
+}
+
+/** Subscriptions, only when the deal does something with them. */
+function subscriptionsStorefront(config: DealConfig) {
+  const s = config.subscriptions;
+  if (!s.enabled && s.apply === "both") return {};
+  return {
+    sub: {
+      on: s.enabled,
+      apply: s.apply === "subscription" ? "s" : s.apply === "onetime" ? "o" : "b",
+      one: s.onetimeLabel,
+      sub: s.subscribeLabel,
+      pre: s.preselect === "subscribe" ? "sub" : "one",
+    },
   };
 }
 

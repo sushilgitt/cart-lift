@@ -360,14 +360,71 @@ function renderPickers(
   return html + "</div>";
 }
 
+/** Selling plans the shopper can pick for this variant (empty when it has none). */
+export function plansFor(deal: SfDeal, variantId: number | string, ctx: RenderCtx) {
+  if (!deal.sub?.on) return [];
+  const allocations = ctx.alloc?.[String(variantId)] ?? [];
+  const names = new Map<number, string>();
+  for (const group of ctx.plans ?? []) for (const plan of group.plans) names.set(plan.id, plan.name);
+  return allocations.filter((a) => names.has(a.p)).map((a) => ({ ...a, name: names.get(a.p)! }));
+}
+
+/** What one unit costs: the selling plan's price when the shopper subscribes. */
+export function planUnit(
+  variant: SfVariant,
+  plan: number | null | undefined,
+  allocations: { p: number; price: number; cap: number | null }[],
+): { unit: number; compare: number | null } {
+  const chosen = plan == null ? undefined : allocations.find((a) => a.p === plan);
+  if (!chosen) return { unit: Number(variant.price) || 0, compare: variant.compare_at_price };
+  return { unit: chosen.price, compare: chosen.cap };
+}
+
+/** The one-time / subscribe picker. */
+function renderPlans(
+  deal: SfDeal,
+  plans: { p: number; price: number; name: string }[],
+  plan: number | null | undefined,
+  fmt: (cents: number) => string,
+  oneTime: number,
+): string {
+  const sub = deal.sub!;
+  const chosen = plans.find((p) => p.p === plan) || plans[0];
+  const subscribed = plan != null;
+  const row = (selected: boolean, value: string, label: string, price: number, inner: string) =>
+    '<label class="cl-plan' + (selected ? " is-selected" : "") + '" data-plan="' + esc(value) + '">' +
+    '<span class="cl-radio" aria-hidden="true"></span>' +
+    '<span class="cl-plan-main"><span class="cl-plan-name">' + esc(label) + "</span>" + inner + "</span>" +
+    '<span class="cl-plan-price">' + esc(fmt(price)) + "</span></label>";
+
+  let html = '<div class="cl-plans" role="radiogroup">';
+  // A deal only for subscriptions doesn't offer the one-time option.
+  if (sub.apply !== "s") html += row(!subscribed, "", sub.one, oneTime, "");
+  const options =
+    plans.length > 1
+      ? '<select class="cl-plan-freq" data-plan-select>' +
+        plans
+          .map((p) => '<option value="' + esc(String(p.p)) + '"' + (p.p === chosen.p ? " selected" : "") + ">" + esc(p.name) + "</option>")
+          .join("") +
+        "</select>"
+      : '<span class="cl-plan-sub">' + esc(chosen.name) + "</span>";
+  html += row(subscribed, String(chosen.p), sub.sub, chosen.price, options);
+  return html + "</div>";
+}
+
 export function renderDeal(deal: SfDeal, state: RenderState, ctx: RenderCtx): string {
   const style = deal.style || {};
   const product = ctx.product;
   const variants = product.variants || [];
   const variant = variants.find((v) => String(v.id) === String(state.variantId)) || variants[0];
   if (!variant) return "";
-  const unit = Number(variant.price) || 0;
-  const compare = style.useCompareAt ? Number(variant.compare_at_price) || 0 : 0;
+  // Subscriptions: the selling plan's price is what every bar is priced from.
+  const plans = plansFor(deal, variant.id, ctx);
+  // A deal only for subscriptions has no one-time option to fall back to.
+  const plan = state.plan ?? (deal.sub?.apply === "s" ? plans[0]?.p : null);
+  const priced = planUnit(variant, plans.length ? plan : null, plans);
+  const unit = priced.unit;
+  const compare = style.useCompareAt ? Number(priced.compare) || 0 : 0;
   const fmt = (cents: number) => formatMoney(cents, ctx.moneyFormat);
   const bars = state.bars || deal.bars;
   const words = ctx.strings ?? DEFAULT_STRINGS;
@@ -390,6 +447,7 @@ export function renderDeal(deal: SfDeal, state: RenderState, ctx: RenderCtx): st
   html += scopedCss(deal.id, style.customCss);
   if (style.htmlAbove) html += '<div class="cl-html cl-html--above">' + (ctx.preview ? sanitizeHtml(style.htmlAbove) : style.htmlAbove) + "</div>";
   html += renderGiftTrack(deal, bars, state, ctx);
+  if (plans.length) html += renderPlans(deal, plans, plan, fmt, Number(variant.price) || 0);
   html += '<div class="cl-bars" role="radiogroup">';
 
   bars.forEach((bar) => {
@@ -403,7 +461,7 @@ export function renderDeal(deal: SfDeal, state: RenderState, ctx: RenderCtx): st
         ? { ...priceMixed(bar, [unit, ...picks.map((x) => x!.price)], ctx.rate), unit: 0 }
         : priceBar(bar, unit, compare, ctx.rate);
     if (!p.unit) p.unit = Math.round(p.total / Math.max(1, bar.qty));
-    const compareUnit = Number(variant.compare_at_price) > unit ? Number(variant.compare_at_price) : unit;
+    const compareUnit = Number(priced.compare) > unit ? Number(priced.compare) : unit;
     const vars = {
       quantity: bundle ? (bar.items || []).reduce((sum, it) => sum + it.q, 0) : bar.qty,
       buy: bar.kind === "bxgy" ? bar.qty - (bar.get || 0) : bar.qty,

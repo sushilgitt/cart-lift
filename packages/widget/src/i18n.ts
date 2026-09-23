@@ -20,6 +20,9 @@ export function translateDeal(deal: SfDeal, i18n?: SfI18n | null): SfDeal {
     ...deal,
     style,
     ...(deal.mm ? { mm: { ...deal.mm, title: pick(t.modalTitle, deal.mm.title), button: pick(t.modalButton, deal.mm.button) } } : {}),
+    ...(deal.sub
+      ? { sub: { ...deal.sub, one: pick(t.onetimeLabel, deal.sub.one), sub: pick(t.subscribeLabel, deal.sub.sub) } }
+      : {}),
     bars: deal.bars.map((bar) => {
       const b = t.bars?.[bar.id];
       const upsells = bar.upsells.map((up) => ({ ...up, text: pick(t.upsells?.[up.id], up.text) }));

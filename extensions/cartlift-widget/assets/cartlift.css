@@ -114,15 +114,73 @@
   background: #fff;
   position: relative;
 }
-.cl-bar.is-selected .cl-radio {
+.cl-bar.is-selected .cl-radio,
+.cl-plan.is-selected .cl-radio {
   border-color: var(--cl-accent);
 }
-.cl-bar.is-selected .cl-radio::after {
+.cl-bar.is-selected .cl-radio::after,
+.cl-plan.is-selected .cl-radio::after {
   content: "";
   position: absolute;
   inset: 3px;
   border-radius: 50%;
   background: var(--cl-accent);
+}
+
+/* One-time / subscribe picker (deals that work with selling plans). */
+.cl-plans {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.cl-plan {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: var(--cl-border-width) solid var(--cl-border);
+  border-radius: var(--cl-radius);
+  background: var(--cl-bar-bg);
+  color: var(--cl-title);
+  font-size: 14px;
+  cursor: pointer;
+}
+.cl-plan.is-selected {
+  border-color: var(--cl-border-selected);
+  background: var(--cl-bar-selected-bg);
+}
+.cl-plan-main {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.cl-plan-name {
+  font-weight: 600;
+}
+.cl-plan-sub {
+  color: var(--cl-subtitle);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cl-plan-freq {
+  max-width: 55%;
+  padding: 4px 6px;
+  border: 1px solid var(--cl-border);
+  border-radius: calc(var(--cl-radius) / 2);
+  background: #fff;
+  color: var(--cl-title);
+  font: inherit;
+  font-size: 13px;
+}
+.cl-plan-price {
+  flex: none;
+  font-weight: 700;
+  color: var(--cl-price);
 }
 .cl-layout-horizontal .cl-radio,
 .cl-layout-grid .cl-radio {

@@ -94,3 +94,40 @@ describe("translations", () => {
     expect(normalizeStrings({ de: {} })).toEqual({});
   });
 });
+
+describe("subscriptions", () => {
+  test("old deals stay one-time-and-subscription alike, and publish nothing extra", () => {
+    const c = normalizeConfig(base());
+    expect(c.subscriptions).toEqual({
+      enabled: false,
+      apply: "both",
+      onetimeLabel: "One-time purchase",
+      subscribeLabel: "Subscribe & save",
+      preselect: "onetime",
+    });
+    expect(storefrontDeal(deal(c))).not.toHaveProperty("sub");
+  });
+
+  test("what the widget is told", () => {
+    const c = normalizeConfig({ ...base(), subscriptions: { enabled: true, apply: "subscription", subscribeLabel: "Abonnieren", preselect: "subscribe" } });
+    expect(storefrontDeal(deal(c))).toMatchObject({
+      sub: { on: true, apply: "s", one: "One-time purchase", sub: "Abonnieren", pre: "sub" },
+    });
+    // A deal that only skips one kind of purchase needs no picker.
+    const quiet = normalizeConfig({ ...base(), subscriptions: { apply: "onetime" } });
+    expect(storefrontDeal(deal(quiet))).toMatchObject({ sub: { on: false, apply: "o" } });
+  });
+
+  test("nonsense settings fall back", () => {
+    const c = normalizeConfig({ ...base(), subscriptions: { apply: "weekly", preselect: 7, onetimeLabel: "" } });
+    expect(c.subscriptions).toMatchObject({ apply: "both", preselect: "onetime", onetimeLabel: "One-time purchase" });
+  });
+
+  test("the picker's texts can be translated", () => {
+    const on = normalizeConfig({ ...base(), subscriptions: { enabled: true } });
+    expect(translatableTexts(on)).toMatchObject({ onetimeLabel: "One-time purchase", subscribeLabel: "Subscribe & save" });
+    const off = normalizeConfig(base());
+    expect(translatableTexts(off)).not.toHaveProperty("subscribeLabel");
+    expect(translationFromTexts({ subscribeLabel: "Abonnieren" })).toMatchObject({ subscribeLabel: "Abonnieren" });
+  });
+});

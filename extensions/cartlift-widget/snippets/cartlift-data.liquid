@@ -34,6 +34,29 @@
         {%- unless forloop.last -%},{%- endunless -%}
       {%- endfor -%}
     },
+    "sp": [
+      {%- for group in product.selling_plan_groups -%}
+        {"id": {{ group.id | json }}, "name": {{ group.name | json }}, "plans": [
+          {%- for plan in group.selling_plans -%}
+            {"id": {{ plan.id }}, "name": {{ plan.name | json }}}{%- unless forloop.last -%},{%- endunless -%}
+          {%- endfor -%}
+        ]}{%- unless forloop.last -%},{%- endunless -%}
+      {%- endfor -%}
+    ],
+    "spa": {
+      {%- assign cl_first = true -%}
+      {%- for v in product.variants -%}
+        {%- if v.selling_plan_allocations.size > 0 -%}
+          {%- unless cl_first -%},{%- endunless -%}{%- assign cl_first = false -%}
+          "{{ v.id }}": [
+            {%- for a in v.selling_plan_allocations -%}
+              {"p": {{ a.selling_plan.id }}, "price": {{ a.price }}, "cap": {%- if a.compare_at_price -%}{{ a.compare_at_price }}{%- else -%}null{%- endif -%}}
+              {%- unless forloop.last -%},{%- endunless -%}
+            {%- endfor -%}
+          ]
+        {%- endif -%}
+      {%- endfor -%}
+    },
     "moneyFormat": {{ shop.money_format | json }},
     "shop": {{ shop.permanent_domain | json }},
     "country": {{ localization.country.iso_code | json }},

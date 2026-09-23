@@ -89,6 +89,8 @@ export interface FnDeal {
   mm?: Targeting;
   /** Countries of the deal's markets (empty / missing = everywhere). */
   ctry?: string[];
+  /** Purchases the deal prices: "s" subscriptions only, "o" one-time only, missing = both. */
+  sub?: "s" | "o";
   name: string;
   bars: FnBar[];
   arms?: Record<string, FnBar[]>;
@@ -125,9 +127,17 @@ function productOf(line: Line) {
   return m.__typename === "ProductVariant" ? m : null;
 }
 
+/** Subscription lines carry a selling plan; a deal may want only one kind. */
+function subscriptionOk(deal: FnDeal, line: Line): boolean {
+  if (!deal.sub) return true;
+  const subscription = Boolean(line.sellingPlanAllocation);
+  return deal.sub === "s" ? subscription : !subscription;
+}
+
 function isEligible(deal: FnDeal, line: Line): boolean {
   const variant = productOf(line);
   if (!variant) return false;
+  if (!subscriptionOk(deal, line)) return false;
   const member = new Map(variant.product.inCollections.map((m) => [m.collectionId, m.isMember]));
   // The input query asks about every targeted collection, so membership is always known.
   return dealMatches(deal, variant.product.id, (c) => member.get(c) ?? false) === true;

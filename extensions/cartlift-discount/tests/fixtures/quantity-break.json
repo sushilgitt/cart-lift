@@ -17,6 +17,7 @@
             "gift": null,
             "upsell": null,
             "bundle": null,
+            "sellingPlanAllocation": null,
             "merchandise": {
               "__typename": "ProductVariant",
               "id": "gid://shopify/ProductVariant/1",
