@@ -31,6 +31,11 @@ cd extensions/cartlift-discount && npx vitest run   # function tests
 | `CARTLIFT_AI_MODEL` | Short jobs (translation). Default `gpt-5.4-mini`. |
 | `CARTLIFT_AI_MODEL_BIG` | The assistant. Default `gpt-5.4`. |
 
+## Testing
+`docs/TESTING.md` is the phase-by-phase plan for testing on a dev store,
+ordered worst-consequence first: the widget/cart/checkout money path before
+anything cosmetic.
+
 ## Support
 `/app/support` is in-app support: the merchant asks, and CartLift answers from
 `app/lib/support-kb.ts` plus facts about their own shop (plan, embed on/off, how
