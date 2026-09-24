@@ -11,7 +11,12 @@ expected, what happened, screenshot). Re-run Phase 2 at the end as a regression
 pass, because it is the one everything else can break.
 
 Automated tests already cover the arithmetic, the cart-line contract and the
-admin's plumbing (`npm test` — 154 app + 61 Function tests). What no test can
+admin's plumbing (`npm test`). Among them, `app/lib/money-path.test.ts` walks
+Phase 2 in simulation: it drives the real widget, takes the cart lines it posts,
+runs them through the real Discount Function and checks the shopper is charged
+what the bar said. Run it before you start — if it fails, don't bother opening a
+product page. It cannot see themes, taxes or Shopify's own discount stacking,
+which is exactly why Phase 2 below is still done by hand. What no test can
 cover is a real theme, a real checkout and a real shopper, which is all this
 document is about.
 
