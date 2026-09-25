@@ -5,6 +5,7 @@ import {
   defaultUnits,
   initialBar,
   mixSlots,
+  perUnitPrice,
   pickerRows,
   planUnit,
   plansFor,
@@ -536,6 +537,8 @@ function mount(container: HTMLElement, base: SfDeal, data: SfData, form: HTMLFor
     const slots = mixSlots(deal, bar);
     const picks = slots ? Array.from({ length: slots - 1 }, (_, i) => state.mix?.[i + 1]) : [];
     if (picks.length && picks.every(Boolean)) return priceMixed(bar, [unit, ...picks.map((p) => p!.price)], rate).total;
+    const perUnit = perUnitPrice(deal, bar, state, ctx, variant, plan);
+    if (perUnit) return perUnit.total;
     const compare = deal.style?.useCompareAt ? Number(priced.compare) || 0 : 0;
     return priceBar(bar, unit, compare, rate).total;
   }

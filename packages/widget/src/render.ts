@@ -1,4 +1,4 @@
-import { escapeHtml as esc, formatMoney, moneyToCents, priceBar, priceBundle, priceMixed, renderText } from "../../core/src";
+import { escapeHtml as esc, formatMoney, moneyToCents, priceBar, priceBundle, priceMixed, renderText, type BarPrice } from "../../core/src";
 import { DEFAULT_STRINGS, type RenderCtx, type RenderState, type SfBar, type SfDeal, type SfGift, type SfProduct, type SfStyle, type SfVariant } from "./types";
 import { optionNames, optionValues, valueAvailable, valueImage, variantValues } from "./variants";
 
@@ -380,6 +380,47 @@ export function planUnit(
   return { unit: chosen.price, compare: chosen.cap };
 }
 
+/**
+ * The selected bar priced from each unit's own variant, when the shopper picked
+ * variants per unit and they don't all cost the same. Checkout prices every
+ * line at its own price (BXGY frees the cheapest), so pricing the bar from one
+ * variant would show a number checkout doesn't charge. Null when one unit
+ * price covers the bar and `priceBar` is exact.
+ */
+export function perUnitPrice(
+  deal: SfDeal,
+  bar: SfBar,
+  state: RenderState,
+  ctx: RenderCtx,
+  variant: SfVariant,
+  plan: number | null | undefined,
+): BarPrice | null {
+  if (bar.kind === "bundle" || bar.id !== state.barId || !deal.variantPerUnit) return null;
+  const rows = pickerRows(deal, bar, ctx.product);
+  if (rows < 2) return null;
+  const variants = ctx.product.variants || [];
+  const units = Array.from({ length: rows }, (_, i) => {
+    const id = (state.unitVariants && state.unitVariants[i]) || variant.id;
+    const own = variants.find((v) => String(v.id) === String(id)) || variant;
+    const plans = plansFor(deal, own.id, ctx);
+    return planUnit(own, plans.length ? plan : null, plans);
+  });
+  if (units.every((u) => u.unit === units[0].unit)) return null;
+  const p = priceMixed(bar, units.map((u) => u.unit), ctx.rate);
+  const compare = deal.style?.useCompareAt
+    ? units.reduce((sum, u) => sum + Math.max(u.unit, Number(u.compare) || 0), 0)
+    : 0;
+  const full = Math.max(p.full, compare);
+  const saved = Math.max(0, full - p.total);
+  return {
+    total: p.total,
+    full,
+    saved,
+    savedPct: full > 0 ? Math.round((saved / full) * 100) : 0,
+    unit: Math.round(p.total / Math.max(1, rows)),
+  };
+}
+
 /** The one-time / subscribe picker. */
 function renderPlans(
   deal: SfDeal,
@@ -459,7 +500,7 @@ export function renderDeal(deal: SfDeal, state: RenderState, ctx: RenderCtx): st
       ? { ...bundlePrice(bar, unit, ctx.rate), unit: 0 }
       : picks.length && picks.every(Boolean)
         ? { ...priceMixed(bar, [unit, ...picks.map((x) => x!.price)], ctx.rate), unit: 0 }
-        : priceBar(bar, unit, compare, ctx.rate);
+        : perUnitPrice(deal, bar, state, ctx, variant, plan) ?? priceBar(bar, unit, compare, ctx.rate);
     if (!p.unit) p.unit = Math.round(p.total / Math.max(1, bar.qty));
     const compareUnit = Number(priced.compare) > unit ? Number(priced.compare) : unit;
     const vars = {
