@@ -184,7 +184,10 @@ async function anthropicCall(
     },
     body: JSON.stringify({
       model,
-      max_tokens: maxTokens,
+      // Current Claude models think by default, and thinking counts against
+      // max_tokens; the caller's figure is sized for the answer alone. It's a
+      // ceiling, not a spend, so a roomy one costs nothing extra.
+      max_tokens: Math.max(maxTokens, 16000),
       system: options.system,
       messages: [
         {

@@ -99,7 +99,7 @@ describe("asking for JSON", () => {
     expect(await askJson({ system: "sys", user: "usr" })).toEqual({ ok: true });
     expect(calls[0].url).toBe("https://api.anthropic.com/v1/messages");
     expect(calls[0].headers["x-api-key"]).toBe("sk-ant");
-    expect(calls[0].body).toMatchObject({ system: "sys", max_tokens: 8000 });
+    expect(calls[0].body).toMatchObject({ system: "sys", max_tokens: 16000 });
   });
 
   test("failures become sentences a merchant can act on", async () => {
