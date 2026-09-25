@@ -18,7 +18,9 @@ function useField<T extends HTMLElement>(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const ref = useRef<any>(null);
   const handler = useRef(onValue);
-  handler.current = onValue;
+  useEffect(() => {
+    handler.current = onValue;
+  });
 
   useEffect(() => {
     const el = ref.current as unknown as Record<string, unknown> | null;

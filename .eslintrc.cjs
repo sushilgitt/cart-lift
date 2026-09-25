@@ -19,7 +19,12 @@ module.exports = {
     commonjs: true,
     es6: true,
   },
-  ignorePatterns: ["!**/.server", "!**/.client"],
+  ignorePatterns: [
+    "!**/.server",
+    "!**/.client",
+    // Built by scripts/build-widget.mjs from packages/widget/src (which is linted).
+    "extensions/cartlift-widget/assets/*.js",
+  ],
 
   // Base config
   extends: ["eslint:recommended"],
@@ -74,6 +79,19 @@ module.exports = {
         "plugin:import/recommended",
         "plugin:import/typescript",
       ],
+      rules: {
+        // `_x` and `const { a: _a, ...rest }` mark values dropped on purpose.
+        "@typescript-eslint/no-unused-vars": [
+          "error",
+          { argsIgnorePattern: "^_", varsIgnorePattern: "^_", ignoreRestSiblings: true },
+        ],
+      },
+    },
+
+    // The Hydrogen example imports Hydrogen, which this app doesn't install.
+    {
+      files: ["examples/**"],
+      rules: { "import/no-unresolved": "off" },
     },
 
     // Node
@@ -84,6 +102,7 @@ module.exports = {
         ".graphqlrc.{js,ts}",
         "shopify.server.{js,ts}",
         "**/*.server.{js,ts}",
+        "extensions/*/tests/**/*.js",
       ],
       env: {
         node: true,

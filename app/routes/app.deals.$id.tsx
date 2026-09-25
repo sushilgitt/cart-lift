@@ -369,6 +369,7 @@ function DealEditor({ data }: { data: LoaderData }) {
   // Reset the baseline after a successful save.
   useEffect(() => {
     if (fetcher.state === "idle" && fetcher.data?.ok) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setBaseline(JSON.stringify(deal));
       shopify.toast.show("Deal saved");
     }

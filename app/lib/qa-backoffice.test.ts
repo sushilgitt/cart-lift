@@ -16,10 +16,10 @@ const db = vi.hoisted(() => ({
   settingsWrites: [] as unknown[],
 }));
 
-vi.mock("../db.server", () => {
+vi.mock("../db.server", async () => {
+  // Reuse the real error class so the code under test recognises it.
+  const { Prisma: P } = await import("@prisma/client");
   const dup = () => {
-    // Reuse the real error class so the code under test recognises it.
-    const { Prisma: P } = require("@prisma/client");
     return new P.PrismaClientKnownRequestError("Unique constraint", { code: "P2002", clientVersion: "test" });
   };
   const bump = (key: string, inc: Record<string, unknown>) => {

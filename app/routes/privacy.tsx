@@ -7,12 +7,12 @@ export default function Privacy() {
       <p>
         When a merchant installs CartLift we store the shop domain, shop name, contact email and currency, plus the
         deals the merchant creates. To report results we store aggregate counts (deal views, add-to-carts, orders) and,
-        for checkouts that contained a CartLift deal, the order id and amounts. We do not collect or store shoppers'
+        for checkouts that contained a CartLift deal, the order id and amounts. We do not collect or store shoppers’
         names, emails, addresses or payment details.
       </p>
       <p>
-        CartLift also reads the store's markets, languages and product unit costs (to target deals, translate them
-        and show profit in analytics), and stores images the merchant uploads for deals in the store's own Shopify
+        CartLift also reads the store’s markets, languages and product unit costs (to target deals, translate them
+        and show profit in analytics), and stores images the merchant uploads for deals in the store’s own Shopify
         Files.
       </p>
       <h2>How we use it</h2>

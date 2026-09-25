@@ -8,7 +8,7 @@ export interface AdminGraphql {
 }
 
 /** Runs an Admin GraphQL call and throws on top-level or user errors. */
-export async function gql<T = any>(
+export async function gql<T = unknown>(
   admin: AdminGraphql,
   query: string,
   variables?: Record<string, unknown>,
