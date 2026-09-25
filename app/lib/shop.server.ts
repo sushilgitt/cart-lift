@@ -84,6 +84,25 @@ export async function backfillShopProfile(admin: AdminGraphql, domain: string) {
   }
 }
 
+/**
+ * customers/redact: forget the orders Shopify lists. The pixel reports an
+ * order id as a number or a GID, so both forms match. Daily totals stay —
+ * they can't be traced back to a customer.
+ */
+export async function redactOrders(domain: string, orderIds: unknown): Promise<number> {
+  const ids = (Array.isArray(orderIds) ? orderIds : [])
+    .map((id) => String(id).split("/").pop() ?? "")
+    .filter((id) => /^\d{1,20}$/.test(id));
+  if (!ids.length) return 0;
+  const { count } = await prisma.dealOrder.deleteMany({
+    where: {
+      shop: { domain },
+      OR: ids.flatMap((id) => [{ orderId: id }, { orderId: { endsWith: `/${id}` } }]),
+    },
+  });
+  return count;
+}
+
 export async function markUninstalled(domain: string) {
   await prisma.session.deleteMany({ where: { shop: domain } });
   await prisma.shop.updateMany({
