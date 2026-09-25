@@ -489,7 +489,9 @@ export function renderDeal(deal: SfDeal, state: RenderState, ctx: RenderCtx): st
   if (style.htmlAbove) html += '<div class="cl-html cl-html--above">' + (ctx.preview ? sanitizeHtml(style.htmlAbove) : style.htmlAbove) + "</div>";
   html += renderGiftTrack(deal, bars, state, ctx);
   if (plans.length) html += renderPlans(deal, plans, plan, fmt, Number(variant.price) || 0);
-  html += '<div class="cl-bars" role="radiogroup">';
+  // Screen readers announce the group by the block title, visible or not.
+  const groupName = style.blockTitle || ctx.product.title || "";
+  html += '<div class="cl-bars" role="radiogroup"' + (groupName ? ' aria-label="' + esc(groupName) + '"' : "") + ">";
 
   bars.forEach((bar) => {
     const selected = bar.id === state.barId;

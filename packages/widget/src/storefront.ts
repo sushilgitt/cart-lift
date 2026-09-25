@@ -122,7 +122,8 @@ function findForm(product: SfProduct, near: Element | null): HTMLFormElement | u
   let candidates = all<HTMLFormElement>(scope, 'form[action*="/cart/add"]');
   if (scope !== document) candidates = candidates.concat(all<HTMLFormElement>(document, 'form[action*="/cart/add"]'));
   return candidates.find((form) => {
-    if (form.closest("cart-drawer, .cart-drawer, [id*='quick'], [class*='quick-add'], aside")) return false;
+    // Attribute matches are case-sensitive: Dawn's modal id is "QuickAdd-…".
+    if (form.closest("cart-drawer, .cart-drawer, quick-add-modal, quick-add-drawer, [id*='quick'], [id*='Quick'], [class*='quick-add'], aside")) return false;
     const input = form.querySelector<HTMLInputElement>('[name="id"]');
     return Boolean(input) && ids.indexOf(String(input!.value)) >= 0;
   });
@@ -572,7 +573,12 @@ function mount(container: HTMLElement, base: SfDeal, data: SfData, form: HTMLFor
   }
 
   function draw() {
+    // Redrawing replaces the bars, so a keyboard user would lose their place.
+    const focused = document.activeElement && container.contains(document.activeElement)
+      ? document.activeElement.getAttribute("data-bar")
+      : null;
     container.innerHTML = renderDeal(deal, state, ctx);
+    if (focused) swallow(() => container.querySelector<HTMLElement>('[data-bar="' + focused + '"]')?.focus());
     sync();
   }
 
