@@ -39,6 +39,8 @@ import { withOption } from "./variants";
 interface ShopifyGlobal {
   currency?: { rate?: string | number };
   routes?: { root?: string };
+  customerPrivacy?: { analyticsProcessingAllowed?: () => boolean };
+  loadFeatures?: (features: { name: string; version: string }[], done: (error?: unknown) => void) => void;
 }
 const shopify = () => (window as unknown as { Shopify?: ShopifyGlobal }).Shopify;
 const root = () => shopify()?.routes?.root || "/";
@@ -50,6 +52,43 @@ function swallow(fn: () => void) {
     // Storage or beacon unavailable (private mode, blocked): not fatal.
   }
 }
+
+/**
+ * Whether the shopper allows analytics (Shopify's Customer Privacy API).
+ * Deals render and price the same either way; only the view/add-to-cart
+ * beacons and the remembered A/B arm and "seen" flags wait for this. Where
+ * no consent is required, Shopify answers true; where the API can't be
+ * reached at all (no storefront, e.g. the admin preview) nothing changes.
+ */
+let consent: Promise<boolean> | null = null;
+function analyticsAllowed(): Promise<boolean> {
+  if (!consent) {
+    consent = new Promise((resolve) => {
+      const s = shopify();
+      const check = () => {
+        const api = shopify()?.customerPrivacy;
+        try {
+          resolve(api?.analyticsProcessingAllowed ? Boolean(api.analyticsProcessingAllowed()) : true);
+        } catch {
+          resolve(false);
+        }
+      };
+      if (!s || s.customerPrivacy || !s.loadFeatures) return check();
+      try {
+        s.loadFeatures([{ name: "consent-tracking-api", version: "0.1" }], (error) => (error ? resolve(false) : check()));
+      } catch {
+        resolve(false);
+      }
+    });
+  }
+  return consent;
+}
+// The shopper answered the cookie banner: ask again next time.
+swallow(() =>
+  document.addEventListener("visitorConsentCollected", () => {
+    consent = null;
+  }),
+);
 
 function isLive(deal: SfDeal): boolean {
   const now = Date.now();
@@ -95,13 +134,18 @@ function pickArm(deal: SfDeal): SfArm {
       }
     }
     const chosen = found.key;
-    swallow(() => localStorage.setItem(storeKey, chosen));
+    // Without consent the arm is picked per page view instead of remembered.
+    analyticsAllowed().then((ok) => ok && swallow(() => localStorage.setItem(storeKey, chosen)));
   }
   return found;
 }
 
 function beacon(api: string, shop: string, events: Record<string, unknown>[]) {
   if (!api) return;
+  analyticsAllowed().then((ok) => ok && send(api, shop, events));
+}
+
+function send(api: string, shop: string, events: Record<string, unknown>[]) {
   const body = JSON.stringify({ shop, events });
   const url = api.replace(/\/$/, "") + "/api/events";
   let sent = false;
@@ -700,23 +744,26 @@ function mount(container: HTMLElement, base: SfDeal, data: SfData, form: HTMLFor
 
   draw();
 
-  const seenKey = "cartlift_seen_" + deal.id;
-  let seen: string | null = null;
-  swallow(() => {
-    seen = sessionStorage.getItem(seenKey);
-    sessionStorage.setItem(seenKey, "1");
-  });
-  if (!seen) beacon(api, data.shop, [{ t: "view", d: deal.id, a: arm.key, p: data.product.id }]);
-  // Deals this visitor saw (and their arm): the pixel reports them with the
-  // order, so orders without deal lines still count for visitor conversion.
-  swallow(() => {
-    const all = JSON.parse(localStorage.getItem("cartlift_seen") || "{}");
-    if (all[deal.id] !== arm.key) {
-      all[deal.id] = arm.key;
-      const keys = Object.keys(all);
-      if (keys.length > 20) delete all[keys[0]];
-      localStorage.setItem("cartlift_seen", JSON.stringify(all));
-    }
+  analyticsAllowed().then((ok) => {
+    if (!ok) return;
+    const seenKey = "cartlift_seen_" + deal.id;
+    let seen: string | null = null;
+    swallow(() => {
+      seen = sessionStorage.getItem(seenKey);
+      sessionStorage.setItem(seenKey, "1");
+    });
+    if (!seen) send(api, data.shop, [{ t: "view", d: deal.id, a: arm.key, p: data.product.id }]);
+    // Deals this visitor saw (and their arm): the pixel reports them with the
+    // order, so orders without deal lines still count for visitor conversion.
+    swallow(() => {
+      const all = JSON.parse(localStorage.getItem("cartlift_seen") || "{}");
+      if (all[deal.id] !== arm.key) {
+        all[deal.id] = arm.key;
+        const keys = Object.keys(all);
+        if (keys.length > 20) delete all[keys[0]];
+        localStorage.setItem("cartlift_seen", JSON.stringify(all));
+      }
+    });
   });
 }
 

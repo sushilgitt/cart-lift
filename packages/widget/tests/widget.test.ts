@@ -56,6 +56,7 @@ function productPage(
     recommendations = [] as Json[],
     store = {} as Record<string, Json>,
     storage = {} as Record<string, string>,
+    shopify = {} as Json,
   } = {},
 ) {
   const window = new Window({ url: "https://shop.test/products/tee" });
@@ -72,7 +73,7 @@ function productPage(
       if (store[path]) return { ok: true, json: async () => store[path] };
       return { ok: true, json: async () => ({ items: [] }) };
     },
-    Shopify: { currency: { rate: "1.0" }, routes: { root: "/" } },
+    Shopify: { currency: { rate: "1.0" }, routes: { root: "/" }, ...shopify },
     alert: () => {},
   });
   (window.navigator as unknown as { sendBeacon: () => boolean }).sendBeacon = () => true;
@@ -475,11 +476,37 @@ describe("Phase 3: A/B arms and tracking", () => {
     expect(page.input("quantity")).toBe("3");
   });
 
-  test("arm A keeps the deal; the seen deal is remembered with its arm", () => {
+  const tick = () => new Promise((r) => setTimeout(r, 0));
+  const stored = (page: ReturnType<typeof productPage>, key: string) =>
+    (page.document.defaultView as unknown as { localStorage: Storage }).localStorage.getItem(key);
+
+  test("arm A keeps the deal; the seen deal is remembered with its arm", async () => {
     const page = productPage(abDeal, { storage: { cartlift_arm_d1: "A" } });
     expect([...page.document.querySelectorAll(".cl-bar")].map((b) => b.getAttribute("data-bar"))).toEqual(["a1", "a2"]);
-    const seen = JSON.parse((page.document.defaultView as unknown as { localStorage: Storage }).localStorage.getItem("cartlift_seen") || "{}");
-    expect(seen).toEqual({ d1: "A" });
+    await tick();
+    expect(JSON.parse(stored(page, "cartlift_seen") || "{}")).toEqual({ d1: "A" });
+  });
+
+  test("without analytics consent the deal still shows, but nothing is stored", async () => {
+    const page = productPage(abDeal, { shopify: { customerPrivacy: { analyticsProcessingAllowed: () => false } } });
+    expect(page.document.querySelectorAll(".cl-bar").length).toBeGreaterThan(0);
+    await tick();
+    expect(stored(page, "cartlift_seen")).toBeNull();
+    expect(stored(page, "cartlift_arm_d1")).toBeNull();
+  });
+
+  test("consent is asked through Shopify.loadFeatures when the API isn't loaded yet", async () => {
+    const shopify = {
+      loadFeatures(this: Json, _features: unknown, done: () => void) {
+        // Called on window.Shopify: installs the API, which says no.
+        this.customerPrivacy = { analyticsProcessingAllowed: () => false };
+        done();
+      },
+    };
+    const page = productPage(abDeal, { shopify });
+    await tick();
+    expect(stored(page, "cartlift_arm_d1")).toBeNull();
+    expect(stored(page, "cartlift_seen")).toBeNull();
   });
 });
 
