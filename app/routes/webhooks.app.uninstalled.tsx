@@ -1,9 +1,9 @@
 import type { ActionFunctionArgs } from "react-router";
-import { authenticate } from "../shopify.server";
+import { authenticateWebhook } from "../shopify.server";
 import { markUninstalled } from "../lib/shop.server";
 
 export const action = async ({ request }: ActionFunctionArgs) => {
-  const { shop, topic } = await authenticate.webhook(request);
+  const { shop, topic } = await authenticateWebhook(request);
   console.log(`Received ${topic} webhook for ${shop}`);
 
   // Deals and stats are kept so a re-install picks up where the merchant left

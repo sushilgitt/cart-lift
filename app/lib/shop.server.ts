@@ -20,13 +20,24 @@ export async function gql<T = unknown>(
 }
 
 /**
- * Shopify sends no "installed" webhook, so the admin loader provisions the
- * shop. Re-installs clear `uninstalledAt` and force a republish, because the
+ * Shopify sends no "installed" webhook, so the shop is provisioned when a
+ * session is created (afterAuth in shopify.server.ts) and again by the admin
+ * loader. Re-installs clear `uninstalledAt` and force a republish, because the
  * app-data metafield and the discount were removed with the installation.
+ *
+ * Safe to call concurrently: on first open, React Router runs the layout and
+ * page loaders in parallel, and both may try to create the row.
  */
 export async function ensureShop(domain: string) {
-  const existing = await prisma.shop.findUnique({ where: { domain } });
-  if (!existing) return prisma.shop.create({ data: { domain } });
+  let existing = await prisma.shop.findUnique({ where: { domain } });
+  if (!existing) {
+    try {
+      return await prisma.shop.create({ data: { domain } });
+    } catch (error) {
+      if ((error as { code?: string }).code !== "P2002") throw error;
+      existing = await prisma.shop.findUniqueOrThrow({ where: { domain } });
+    }
+  }
   if (existing.uninstalledAt) {
     return prisma.shop.update({
       where: { id: existing.id },

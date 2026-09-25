@@ -1,5 +1,5 @@
 import type { ActionFunctionArgs } from "react-router";
-import { authenticate } from "../shopify.server";
+import { authenticateWebhook } from "../shopify.server";
 import prisma from "../db.server";
 import { redactOrders } from "../lib/shop.server";
 
@@ -15,7 +15,7 @@ import { redactOrders } from "../lib/shop.server";
  * `authenticate.webhook` verifies the HMAC; unsigned review probes get a 401.
  */
 export const action = async ({ request }: ActionFunctionArgs) => {
-  const { topic, shop, payload } = await authenticate.webhook(request);
+  const { topic, shop, payload } = await authenticateWebhook(request);
 
   try {
     if (topic === "CUSTOMERS_REDACT") {
