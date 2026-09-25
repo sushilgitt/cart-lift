@@ -24,6 +24,14 @@ export interface BarPrice {
 }
 
 /**
+ * "Amount off each item" in presentment cents. The Function sends Shopify one
+ * converted amount applied to every item, so it is rounded once, per unit —
+ * rounding only the bar total would show a cent more or less than checkout
+ * charges whenever the currency rate isn't 1.
+ */
+export const amountEach = (dv: number, rate = 1) => Math.round(Math.max(0, Number(dv) || 0) * 100 * rate);
+
+/**
  * Prices a bar for a unit price in cents, as checkout will (the Discount
  * Function applies the same rules). `compare` is the compare-at unit price in
  * cents (0 = none); `rate` converts shop-currency amounts to presentment.
@@ -47,7 +55,7 @@ export function priceBar(bar: PricedBar, unit: number, compare = 0, rate = 1): B
   } else if (bar.dt === "percentage") {
     total = base * (1 - Math.min(v, 100) / 100);
   } else if (bar.dt === "amount") {
-    total = Math.max(0, base - v * 100 * rate * qty);
+    total = Math.max(0, base - Math.min(amountEach(v, rate), unit) * qty);
   } else if (bar.dt === "fixed_total") {
     total = Math.min(base, v * 100 * rate);
   }

@@ -1,5 +1,5 @@
 import { matchesTarget, type Targeted } from "./tiers";
-import type { DiscountType, PricedBar } from "./pricing";
+import { amountEach, type DiscountType, type PricedBar } from "./pricing";
 
 /**
  * Rules for the Phase 2 templates, shared by the Discount Function, the cart
@@ -129,7 +129,7 @@ export function priceMixed(bar: PricedBar, units: number[], rate = 1): BundlePri
   } else if (bar.dt === "percentage") {
     total = full * (1 - Math.min(v, 100) / 100);
   } else if (bar.dt === "amount") {
-    total = units.reduce((s, u) => s + Math.max(0, u - v * 100 * rate), 0);
+    total = units.reduce((s, u) => s + Math.max(0, u - amountEach(v, rate)), 0);
   } else if (bar.dt === "fixed_total") {
     total = Math.min(full, v * 100 * rate);
   }
